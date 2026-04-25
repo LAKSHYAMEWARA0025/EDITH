@@ -47,7 +47,7 @@ class EDITHDroneEnv:
             "get_mission_status": get_mission_status,
             "assign_drone_to_target": assign_drone_to_target,
             "return_drone_home": return_drone_home,
-            "get_camera_frame": get_camera_frame
+            # get_camera_frame removed - returns too much data for LLM context
         }
         
         # Validate tool name

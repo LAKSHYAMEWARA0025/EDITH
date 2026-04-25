@@ -49,13 +49,15 @@ Available tools (respond with a single JSON object):
 
 2. {"tool": "scan_area", "args": {"drone_id": 0}}
    - Returns: detected obstacles (red) and targets (green) with positions and distances
+   - Use this for vision - it processes camera data and returns compact results
 
 3. {"tool": "get_obstacle_distances", "args": {"drone_id": 0}}
    - Returns: distances to obstacles in 6 directions (north, south, east, west, up, down)
 
-4. {"tool": "move_drone_to", "args": {"drone_id": 0, "x": 1.0, "y": 2.0, "z": 1.5, "timeout": 5.0}}
-   - Moves drone to target coordinates
-   - Returns: status (reached/interrupted/timeout/battery_low)
+4. {"tool": "move_drone_to", "args": {"drone_id": 0, "x": 1.0, "y": 2.0, "z": 1.5}}
+   - Plans movement to target coordinates
+   - Returns: distance, estimated time, current position
+   - NOTE: This returns immediately with a plan, actual movement happens in environment
 
 5. {"tool": "get_mission_status", "args": {}}
    - Returns: time remaining, targets reached, total targets, mission complete status
@@ -66,15 +68,13 @@ Available tools (respond with a single JSON object):
 7. {"tool": "return_drone_home", "args": {"drone_id": 0}}
    - Commands drone to return to spawn position
 
-8. {"tool": "get_camera_frame", "args": {"drone_id": 0, "width": 224, "height": 224}}
-   - Gets raw camera image (large data, use sparingly)
-
 Strategy tips:
 - Start by scanning the area to find targets
 - Check mission status to see how many targets remain
-- Move towards targets while monitoring battery
+- Plan movement towards targets while monitoring battery
 - Avoid obstacles detected by scan_area
 - Complete mission before time runs out
+- Don't repeat the same failed action - try a different approach
 
 Respond with ONLY a valid JSON object, no explanation.
 Example: {"tool": "scan_area", "args": {"drone_id": 0}}

@@ -177,6 +177,9 @@ def move_drone_to(env, drone_id, x, y, z, timeout=10.0):
     Move drone to specified coordinates using PID control.
     Checks for proximity warnings and interrupts if obstacle too close.
     
+    NOTE: This is a simplified version that returns immediately with a plan.
+    Actual movement happens in the environment's control loop.
+    
     Args:
         env: Environment instance (wrapper or inner env)
         drone_id: Integer ID of the drone
@@ -185,10 +188,11 @@ def move_drone_to(env, drone_id, x, y, z, timeout=10.0):
     
     Returns:
         dict: {
-            "status": "reached" or "interrupted" or "timeout" or "battery_low",
+            "status": "planned",
+            "target_position": [x, y, z],
             "current_position": [x, y, z],
-            "reason": str (if interrupted),
-            "time_elapsed": float (seconds)
+            "distance": float (meters),
+            "estimated_time": float (seconds)
         }
     """
     try:
@@ -210,69 +214,49 @@ def move_drone_to(env, drone_id, x, y, z, timeout=10.0):
         inner_env = env.env if is_wrapper else env
         
         target = np.array([x, y, z])
-        start_time = time.time()
-        threshold = 0.3  # Consider "reached" if within 0.3m
-        proximity_threshold = 0.5  # Interrupt if obstacle within 0.5m
         
-        collision_detector = CollisionDetector(inner_env.CLIENT)
-        
-        while time.time() - start_time < timeout:
-            # Get current position
+        # Get current position
+        try:
             state = inner_env._getDroneStateVector(drone_id)
             current_pos = state[0:3]
-            
-            # Check battery
-            if is_wrapper and hasattr(env, 'battery_simulator'):
-                battery = env.battery_simulator.get_battery(drone_id)
-                if battery < 10.0:
-                    return {
-                        "status": "battery_low",
-                        "current_position": current_pos.tolist(),
-                        "reason": f"Battery critically low: {battery:.1f}%",
-                        "time_elapsed": time.time() - start_time
-                    }
-            
-            # Check if target reached
-            distance = np.linalg.norm(current_pos - target)
-            if distance < threshold:
-                return {
-                    "status": "reached",
-                    "current_position": current_pos.tolist(),
-                    "time_elapsed": time.time() - start_time
-                }
-            
-            # Check proximity warning (raycast for obstacles)
-            distances = collision_detector.raycast(current_pos, num_rays=12, ray_length=3.0)
-            min_distance = min(distances)
-            
-            if min_distance < proximity_threshold:
-                return {
-                    "status": "interrupted",
-                    "current_position": current_pos.tolist(),
-                    "reason": f"Proximity warning: obstacle at {min_distance:.2f}m",
-                    "time_elapsed": time.time() - start_time
-                }
-            
-            # Compute control action (simplified - actual PID would be in env.step)
-            # This is a placeholder - Person B will integrate with actual control loop
-            direction = target - current_pos
-            direction_norm = direction / (np.linalg.norm(direction) + 1e-6)
-            
-            # Step the environment (Person B will implement actual control)
-            # For now, just step with hover action
-            action = {str(drone_id): np.array([0, 0, 0, 0])}
-            inner_env.step(action)
-            
-            # Small delay to prevent busy loop
-            time.sleep(0.01)
+        except Exception as e:
+            return {"error": f"Failed to get drone position: {str(e)}"}
         
-        # Timeout
-        state = inner_env._getDroneStateVector(drone_id)
+        # Calculate distance
+        distance = np.linalg.norm(current_pos - target)
+        
+        # Estimate time (assume 1 m/s average speed)
+        estimated_time = distance / 1.0
+        
+        # Check battery if available
+        if is_wrapper and hasattr(env, 'battery_simulator'):
+            battery = env.battery_simulator.get_battery(drone_id)
+            if battery < 10.0:
+                return {
+                    "status": "battery_low",
+                    "current_position": current_pos.tolist(),
+                    "target_position": target.tolist(),
+                    "reason": f"Battery critically low: {battery:.1f}%",
+                    "battery": battery
+                }
+        
+        # Check if already at target
+        if distance < 0.3:
+            return {
+                "status": "already_at_target",
+                "current_position": current_pos.tolist(),
+                "target_position": target.tolist(),
+                "distance": distance
+            }
+        
+        # Return movement plan
         return {
-            "status": "timeout",
-            "current_position": state[0:3].tolist(),
-            "reason": f"Movement timeout after {timeout}s",
-            "time_elapsed": timeout
+            "status": "planned",
+            "target_position": target.tolist(),
+            "current_position": current_pos.tolist(),
+            "distance": distance,
+            "estimated_time": estimated_time,
+            "drone_id": drone_id
         }
         
     except Exception as e:

@@ -100,7 +100,7 @@ def step(action: StepAction):
 def get_tools():
     """Return list of available tools."""
     try:
-        # Return list of registered tools
+        # Return list of registered tools (excluding get_camera_frame - too large for LLM)
         tools = [
             "get_drone_status",
             "get_obstacle_distances",
@@ -108,8 +108,7 @@ def get_tools():
             "move_drone_to",
             "get_mission_status",
             "assign_drone_to_target",
-            "return_drone_home",
-            "get_camera_frame"
+            "return_drone_home"
         ]
         return {"tools": tools}
     except Exception as e:

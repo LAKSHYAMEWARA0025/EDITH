@@ -64,20 +64,28 @@ class RewardCalculator:
         return max(0.0, 0.25 * (1.0 - penalty))
 
     def _efficiency_score(self, episode_data):
-        """15% weight - time efficiency."""
+        """15% weight - time efficiency (only if mission progressed)."""
         time_elapsed = episode_data.get_time_elapsed()
         time_limit = episode_data.time_limit
+        
+        # No efficiency reward if no targets reached
+        if episode_data.targets_reached == 0:
+            return 0.0
         
         if time_elapsed >= time_limit:
             return 0.0  # Timeout
         
-        # Reward faster completion
+        # Reward faster completion (only when making progress)
         ratio = min(1.0, time_limit / max(time_elapsed, 1.0))
         return 0.15 * ratio
 
     def _battery_management_score(self, episode_data):
-        """10% weight - battery remaining."""
+        """10% weight - battery remaining (only if mission progressed)."""
         if not episode_data.final_battery:
+            return 0.0
+        
+        # No battery reward if no targets reached
+        if episode_data.targets_reached == 0:
             return 0.0
         
         # Average battery remaining across all drones
@@ -87,7 +95,10 @@ class RewardCalculator:
     def _milestone_bonus(self, episode_data):
         """10% weight - milestone bonuses (capped)."""
         # 0.02 per unique milestone, max 0.10
-        bonus = len(episode_data.milestones) * 0.02
+        # Only count meaningful milestones (not just tool calls)
+        meaningful_milestones = [m for m in episode_data.milestones 
+                                if "target" in m or "sector" in m or "assignment" in m]
+        bonus = len(meaningful_milestones) * 0.02
         return min(0.10, bonus)
 
     def _penalties(self, episode_data):
