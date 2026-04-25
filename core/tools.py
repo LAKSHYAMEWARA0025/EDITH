@@ -17,7 +17,7 @@ def get_drone_status(env, drone_id):
     Get current status of a specific drone.
     
     Args:
-        env: Environment instance with PyBullet client
+        env: Environment instance (wrapper or inner env)
         drone_id: Integer ID of the drone
     
     Returns:
@@ -28,15 +28,21 @@ def get_drone_status(env, drone_id):
         }
     """
     try:
+        # Detect if this is wrapper or inner env
+        is_wrapper = hasattr(env, 'scene_manager')
+        inner_env = env.env if is_wrapper else env
+        
         # Read pose directly from PyBullet body to match GUI position.
-        drone_body_id = env.DRONE_IDS[drone_id]
-        position, _ = p.getBasePositionAndOrientation(drone_body_id, physicsClientId=env.CLIENT)
-        linear_velocity, _ = p.getBaseVelocity(drone_body_id, physicsClientId=env.CLIENT)
+        drone_body_id = inner_env.DRONE_IDS[drone_id]
+        position, _ = p.getBasePositionAndOrientation(drone_body_id, physicsClientId=inner_env.CLIENT)
+        linear_velocity, _ = p.getBaseVelocity(drone_body_id, physicsClientId=inner_env.CLIENT)
         position = list(position)
         velocity = list(linear_velocity)
         
         # Get battery from battery simulator
-        battery = env.batteries[drone_id].get_percentage() if hasattr(env, 'batteries') else 100.0
+        battery = 100.0
+        if is_wrapper and hasattr(env, 'battery_simulator'):
+            battery = env.battery_simulator.get_battery(drone_id)
         
         return {
             "position": position,
@@ -53,7 +59,7 @@ def get_obstacle_distances(env, drone_id):
     Get distances to nearest obstacles in 6 directions using raycasting.
     
     Args:
-        env: Environment instance
+        env: Environment instance (wrapper or inner env)
         drone_id: Integer ID of the drone
     
     Returns:
@@ -67,12 +73,16 @@ def get_obstacle_distances(env, drone_id):
         }
     """
     try:
+        # Detect if this is wrapper or inner env
+        is_wrapper = hasattr(env, 'scene_manager')
+        inner_env = env.env if is_wrapper else env
+        
         # Get drone position
-        state = env._getDroneStateVector(drone_id)
+        state = inner_env._getDroneStateVector(drone_id)
         pos = state[0:3]
         
         # Use collision detector for raycasting
-        collision_detector = CollisionDetector(env.CLIENT)
+        collision_detector = CollisionDetector(inner_env.CLIENT)
         
         # Cast rays in 6 cardinal directions
         ray_length = 5.0  # 5 meters
@@ -92,7 +102,7 @@ def get_obstacle_distances(env, drone_id):
             ray_from = pos.tolist()
             ray_to = (pos + np.array(offset)).tolist()
             
-            result = p.rayTest(ray_from, ray_to, physicsClientId=env.CLIENT)
+            result = p.rayTest(ray_from, ray_to, physicsClientId=inner_env.CLIENT)
             
             if result and len(result) > 0:
                 hit_fraction = result[0][2]
@@ -168,7 +178,7 @@ def move_drone_to(env, drone_id, x, y, z, timeout=10.0):
     Checks for proximity warnings and interrupts if obstacle too close.
     
     Args:
-        env: Environment instance
+        env: Environment instance (wrapper or inner env)
         drone_id: Integer ID of the drone
         x, y, z: Target coordinates (floats)
         timeout: Maximum time to attempt movement (seconds)
@@ -195,21 +205,25 @@ def move_drone_to(env, drone_id, x, y, z, timeout=10.0):
         if timeout <= 0:
             return {"error": f"Invalid timeout: {timeout}. Must be positive."}
         
+        # Detect if this is wrapper or inner env
+        is_wrapper = hasattr(env, 'scene_manager')
+        inner_env = env.env if is_wrapper else env
+        
         target = np.array([x, y, z])
         start_time = time.time()
         threshold = 0.3  # Consider "reached" if within 0.3m
         proximity_threshold = 0.5  # Interrupt if obstacle within 0.5m
         
-        collision_detector = CollisionDetector(env.CLIENT)
+        collision_detector = CollisionDetector(inner_env.CLIENT)
         
         while time.time() - start_time < timeout:
             # Get current position
-            state = env._getDroneStateVector(drone_id)
+            state = inner_env._getDroneStateVector(drone_id)
             current_pos = state[0:3]
             
             # Check battery
-            if hasattr(env, 'batteries'):
-                battery = env.batteries[drone_id].get_percentage()
+            if is_wrapper and hasattr(env, 'battery_simulator'):
+                battery = env.battery_simulator.get_battery(drone_id)
                 if battery < 10.0:
                     return {
                         "status": "battery_low",
@@ -247,13 +261,13 @@ def move_drone_to(env, drone_id, x, y, z, timeout=10.0):
             # Step the environment (Person B will implement actual control)
             # For now, just step with hover action
             action = {str(drone_id): np.array([0, 0, 0, 0])}
-            env.step(action)
+            inner_env.step(action)
             
             # Small delay to prevent busy loop
             time.sleep(0.01)
         
         # Timeout
-        state = env._getDroneStateVector(drone_id)
+        state = inner_env._getDroneStateVector(drone_id)
         return {
             "status": "timeout",
             "current_position": state[0:3].tolist(),
@@ -351,7 +365,7 @@ def assign_drone_to_target(env, drone_id, target_id):
     Assign a drone to a specific target and estimate battery cost.
     
     Args:
-        env: Environment instance
+        env: Environment instance (wrapper or inner env)
         drone_id: Integer ID of the drone
         target_id: Integer ID of the target (index in target_ids list)
     
@@ -373,23 +387,29 @@ def assign_drone_to_target(env, drone_id, target_id):
         except (ValueError, TypeError):
             return {"error": f"Invalid target_id type: expected int, got {type(target_id).__name__}"}
         
+        # Detect if this is wrapper or inner env
+        is_wrapper = hasattr(env, 'scene_manager')
+        
+        if not is_wrapper:
+            return {"error": "assign_drone_to_target requires wrapper environment (not available in direct env access)"}
+        
+        inner_env = env.env
+        
         # Get drone position and battery
-        state = env._getDroneStateVector(drone_id)
+        state = inner_env._getDroneStateVector(drone_id)
         drone_pos = state[0:3]
         
         current_battery = 100.0
-        if hasattr(env, 'batteries'):
-            current_battery = env.batteries[drone_id].get_percentage()
+        if hasattr(env, 'battery_simulator'):
+            current_battery = env.battery_simulator.get_battery(drone_id)
         
-        # Get target position
-        if not hasattr(env, 'scene_manager'):
-            return {"error": "Environment does not have scene_manager (wrapper required)"}
-        
+        # Validate target_id range
         if target_id < 0 or target_id >= len(env.scene_manager.target_ids):
             return {"error": f"Invalid target_id: {target_id}. Valid range: 0-{len(env.scene_manager.target_ids)-1}"}
         
+        # Get target position
         target_body_id = env.scene_manager.target_ids[target_id]
-        target_pos, _ = p.getBasePositionAndOrientation(target_body_id, physicsClientId=env.CLIENT)
+        target_pos, _ = p.getBasePositionAndOrientation(target_body_id, physicsClientId=inner_env.CLIENT)
         target_pos = np.array(target_pos)
         
         # Calculate distance
@@ -422,7 +442,7 @@ def return_drone_home(env, drone_id):
     Command drone to return to home/spawn position.
     
     Args:
-        env: Environment instance
+        env: Environment instance (wrapper or inner env)
         drone_id: Integer ID of the drone
     
     Returns:
@@ -435,12 +455,16 @@ def return_drone_home(env, drone_id):
         }
     """
     try:
+        # Detect if this is wrapper or inner env
+        is_wrapper = hasattr(env, 'scene_manager')
+        inner_env = env.env if is_wrapper else env
+        
         # Get current position
-        state = env._getDroneStateVector(drone_id)
+        state = inner_env._getDroneStateVector(drone_id)
         current_pos = state[0:3]
         
         # Get home position (spawn position)
-        home_pos = getattr(env, 'INIT_XYZS', np.array([[0, 0, 1]]))[drone_id]
+        home_pos = getattr(inner_env, 'INIT_XYZS', np.array([[0, 0, 1]]))[drone_id]
         
         # Calculate distance
         distance = np.linalg.norm(current_pos - home_pos)
@@ -466,7 +490,7 @@ def get_camera_frame(env, drone_id, width=224, height=224):
     Get raw camera frame from drone's perspective.
     
     Args:
-        env: Environment instance
+        env: Environment instance (wrapper or inner env)
         drone_id: Integer ID of the drone
         width: Frame width in pixels
         height: Frame height in pixels
@@ -493,12 +517,16 @@ def get_camera_frame(env, drone_id, width=224, height=224):
         if width > 1920 or height > 1920:
             return {"error": f"Dimensions too large: width={width}, height={height}. Max 1920x1920."}
         
+        # Detect if this is wrapper or inner env
+        is_wrapper = hasattr(env, 'scene_manager')
+        inner_env = env.env if is_wrapper else env
+        
         # Get drone position
-        state = env._getDroneStateVector(drone_id)
+        state = inner_env._getDroneStateVector(drone_id)
         pos = state[0:3]
         
         # Initialize vision system
-        vision = VisionSystem(env.CLIENT)
+        vision = VisionSystem(inner_env.CLIENT)
         
         # Capture frame
         frame = vision.get_camera_frame(pos, width=width, height=height)
