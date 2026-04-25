@@ -116,17 +116,33 @@ class VisionSystem:
         estimated_distance = np.sqrt(reference_area / contour_area) * reference_distance
         return estimated_distance
 
-    def get_direction(self, bbox_center, frame_width=224):
+    def get_direction(self, bbox_center, frame_width=224, frame_height=224):
         """
         Get direction of object relative to camera center.
-        Returns: 'left', 'center', or 'right'
+        Returns: dict with horizontal and vertical direction
         """
         center_x = bbox_center[0]
-        frame_center = frame_width // 2
+        center_y = bbox_center[1]
+        frame_center_x = frame_width // 2
+        frame_center_y = frame_height // 2
         
-        if center_x < frame_center - frame_width * 0.2:
-            return "left"
-        elif center_x > frame_center + frame_width * 0.2:
-            return "right"
+        # Horizontal direction
+        if center_x < frame_center_x - frame_width * 0.2:
+            horizontal = "left"
+        elif center_x > frame_center_x + frame_width * 0.2:
+            horizontal = "right"
         else:
-            return "center"
+            horizontal = "center"
+        
+        # Vertical direction
+        if center_y < frame_center_y - frame_height * 0.2:
+            vertical = "above"
+        elif center_y > frame_center_y + frame_height * 0.2:
+            vertical = "below"
+        else:
+            vertical = "level"
+        
+        return {
+            "horizontal": horizontal,
+            "vertical": vertical
+        }

@@ -154,7 +154,9 @@ def scan_area(env, drone_id):
         # Enhance detections with distance and direction
         for detection in detections:
             detection["estimated_distance"] = vision.estimate_distance(detection["area"])
-            detection["direction"] = vision.get_direction(detection["center"], frame_width=224)
+            direction_info = vision.get_direction(detection["center"], frame_width=224, frame_height=224)
+            detection["direction"] = direction_info["horizontal"]  # left/center/right
+            detection["altitude"] = direction_info["vertical"]  # above/level/below
         
         # Count by type
         obstacles_count = sum(1 for d in detections if d["type"] == "obstacle")

@@ -48,19 +48,21 @@ COORDINATE SYSTEM (IMPORTANT):
 - Y-axis: forward/backward (positive Y = forward, negative Y = backward)
 - Z-axis: up/down (positive Z = up, negative Z = down)
 - Drone starts at [0, 0, 0.1] (origin, ground level)
-- Camera looks in +Y direction (forward)
-- When scan_area detects "left", target is at negative X
-- When scan_area detects "right", target is at positive X
-- When scan_area detects "center", target is straight ahead (+Y)
+- Targets are typically at Z = 0.5 to 1.5m (above ground)
+- You MUST adjust altitude (Z) to reach targets - they are not at ground level!
 
 Available tools (respond with a single JSON object):
 1. {"tool": "get_drone_status", "args": {"drone_id": 0}}
    - Returns: position [x,y,z], velocity, battery percentage
 
 2. {"tool": "scan_area", "args": {"drone_id": 0}}
-   - Returns: detected obstacles (red) and targets (green) with positions and distances
+   - Returns: detected obstacles (red) and targets (green) with:
+     * direction: "left"/"center"/"right" (horizontal)
+     * altitude: "above"/"level"/"below" (vertical - IMPORTANT!)
+     * estimated_distance: meters away
    - Use this for vision - it processes camera data and returns compact results
-   - Direction "left" = negative X, "right" = positive X, "center" = straight ahead (+Y)
+   - If target is "above", you MUST increase Z coordinate
+   - If target is "below", you MUST decrease Z coordinate
 
 3. {"tool": "get_obstacle_distances", "args": {"drone_id": 0}}
    - Returns: distances to obstacles in 6 directions (north, south, east, west, up, down)
@@ -68,8 +70,9 @@ Available tools (respond with a single JSON object):
 4. {"tool": "move_drone_to", "args": {"drone_id": 0, "x": 1.0, "y": 2.0, "z": 1.5}}
    - Plans movement to target coordinates (absolute position, not relative)
    - X: left(-) / right(+), Y: backward(-) / forward(+), Z: down(-) / up(+)
+   - IMPORTANT: You MUST set Z coordinate! Don't keep it at 0.1!
+   - Typical target altitude: Z = 0.5 to 1.5m
    - Returns: distance, estimated time, current position
-   - NOTE: This returns immediately with a plan, actual movement happens in environment
 
 5. {"tool": "get_mission_status", "args": {}}
    - Returns: time remaining, targets reached, total targets, mission complete status
@@ -82,13 +85,16 @@ Available tools (respond with a single JSON object):
 
 Strategy tips:
 - Start by scanning the area to find targets
-- If target is "left", move to negative X; if "right", move to positive X
+- Pay attention to BOTH direction AND altitude from scan_area
+- If target is "above", increase Z (e.g., from 0.1 to 1.0 or 1.5)
+- If target is "left", decrease X; if "right", increase X
 - If target is "center", move forward in +Y direction
+- Adjust all three coordinates (X, Y, Z) to reach the target
 - Check mission status to see how many targets remain
-- Plan movement towards targets while monitoring battery
 - Avoid obstacles detected by scan_area
 - Complete mission before time runs out
-- Don't repeat the same failed action - try a different approach
+
+CRITICAL: Targets are NOT at ground level (Z=0.1). You MUST change altitude!
 
 Respond with ONLY a valid JSON object, no explanation.
 Example: {"tool": "scan_area", "args": {"drone_id": 0}}
