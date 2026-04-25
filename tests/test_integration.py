@@ -1,10 +1,13 @@
 """
 Integration test - Run on friend's laptop with PyBullet working
+Run from EDITH directory: python tests/test_integration.py
 """
 
 import sys
 import os
-sys.path.insert(0, os.path.dirname(__file__))
+
+# Add EDITH directory to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 print("=" * 60)
 print("EDITH Integration Test")
