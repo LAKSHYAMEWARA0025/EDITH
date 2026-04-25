@@ -113,11 +113,30 @@ def log_start(task: str, model: str) -> None:
     print(f"{'='*60}\n")
 
 
-def log_step(step: int, tool: str, result: Dict[Any, Any], reward: float, done: bool) -> None:
-    """Log each step with per-step reward (not cumulative)."""
+def log_step(step: int, tool: str, result: Dict[Any, Any], reward: float, done: bool, action_args: Dict = None) -> None:
+    """Log each step with per-step reward and action details."""
     error = result.get("error", None) if isinstance(result, dict) else None
     status = "ERROR" if error else "OK"
-    print(f"[STEP {step:2d}] tool={tool:25s} status={status:5s} step_reward={reward:+7.3f} done={done}")
+    
+    # Show action arguments for move commands
+    args_str = ""
+    if action_args and tool == "move_drone_to":
+        x = action_args.get("x", "?")
+        y = action_args.get("y", "?")
+        z = action_args.get("z", "?")
+        args_str = f" → [{x}, {y}, {z}]"
+    
+    print(f"[STEP {step:2d}] tool={tool:25s}{args_str:20s} status={status:5s} step_reward={reward:+7.3f} done={done}")
+    
+    # Show scan results
+    if tool == "scan_area" and not error:
+        detections = result.get("detections", [])
+        if detections:
+            for det in detections[:3]:  # Show first 3
+                print(f"          └─ {det['type']:8s}: dir={det.get('direction','?'):6s} alt={det.get('altitude','?'):6s} dist={det.get('estimated_distance',0):.1f}m")
+        else:
+            print(f"          └─ No detections")
+    
     if error:
         print(f"          Error: {error}")
 
@@ -185,7 +204,7 @@ def step_env(server_url: str, action: Dict[str, Any]) -> Dict[str, Any]:
     return response.json()
 
 
-def run_episode(client: OpenAI, task: str, server_url: str) -> float:
+def run_episode(client: OpenAI, task: str, server_url: str, debug: bool = False) -> float:
     """Run one episode with LLM agent."""
     rewards: List[float] = []
     total_reward = 0.0
@@ -221,6 +240,11 @@ def run_episode(client: OpenAI, task: str, server_url: str) -> float:
             raw_response = ask_llm(client, messages)
             action = parse_action(raw_response)
             
+            # Debug: show what LLM is thinking
+            if debug and step <= 5:
+                print(f"\n[DEBUG] LLM Response (step {step}):")
+                print(f"  {raw_response[:200]}...")
+            
             # Fallback if parsing fails
             if action is None:
                 print(f"[WARN] Failed to parse LLM response, using fallback action")
@@ -239,7 +263,7 @@ def run_episode(client: OpenAI, task: str, server_url: str) -> float:
             total_reward += reward
             steps_taken = step
             
-            log_step(step, action["tool"], tool_result, reward, done)
+            log_step(step, action["tool"], tool_result, reward, done, action.get("args", {}))
             
             # Update conversation
             messages.append({"role": "assistant", "content": raw_response})
@@ -270,6 +294,8 @@ def main():
                        help="Task to run (task1=basic, task2=battery, task3=multi-target)")
     parser.add_argument("--server", default=SERVER_URL,
                        help="Server URL (default: http://localhost:8000)")
+    parser.add_argument("--debug", action="store_true",
+                       help="Show LLM reasoning and decisions")
     args = parser.parse_args()
     
     print("\n" + "="*60)
@@ -296,7 +322,7 @@ def main():
     client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
     
     # Run episode
-    total_reward = run_episode(client, args.task, args.server)
+    total_reward = run_episode(client, args.task, args.server, debug=args.debug)
     
     print(f"\n[FINAL] Total reward: {total_reward:.3f}")
     print("\nTest complete! Check the PyBullet GUI window for visualization.")
