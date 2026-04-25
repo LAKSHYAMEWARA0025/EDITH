@@ -9,7 +9,7 @@ from core.scene_manager import SceneManager
 from core.vision_system import VisionSystem
 from core.battery_simulator import BatterySimulator
 from core.collision_detector import CollisionDetector
-from wrapper.reward_calculator import RewardCalculator
+from wrapper.reward_calculator_v2 import RewardCalculatorV2
 from wrapper.episode_tracker import EpisodeData
 from core.tools import (
     get_drone_status, get_obstacle_distances, scan_area,
@@ -35,7 +35,7 @@ class EDITHDroneEnv:
         self.vision_system = VisionSystem(client_id)
         self.battery_simulator = BatterySimulator()
         self.collision_detector = CollisionDetector(client_id)
-        self.reward_calculator = RewardCalculator()
+        self.reward_calculator = RewardCalculatorV2()
         self.episode_tracker = EpisodeData()
         
         # Store target positions for each drone (for PID controller)

@@ -114,10 +114,10 @@ def log_start(task: str, model: str) -> None:
 
 
 def log_step(step: int, tool: str, result: Dict[Any, Any], reward: float, done: bool) -> None:
-    """Log each step."""
+    """Log each step with per-step reward (not cumulative)."""
     error = result.get("error", None) if isinstance(result, dict) else None
     status = "ERROR" if error else "OK"
-    print(f"[STEP {step:2d}] tool={tool:25s} status={status:5s} reward={reward:6.3f} done={done}")
+    print(f"[STEP {step:2d}] tool={tool:25s} status={status:5s} step_reward={reward:+7.3f} done={done}")
     if error:
         print(f"          Error: {error}")
 
