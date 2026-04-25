@@ -28,11 +28,12 @@ def get_drone_status(env, drone_id):
         }
     """
     try:
-        # Get drone state from environment
-        state = env._getDroneStateVector(drone_id)
-        
-        position = state[0:3].tolist()
-        velocity = state[10:13].tolist()
+        # Read pose directly from PyBullet body to match GUI position.
+        drone_body_id = env.DRONE_IDS[drone_id]
+        position, _ = p.getBasePositionAndOrientation(drone_body_id, physicsClientId=env.CLIENT)
+        linear_velocity, _ = p.getBaseVelocity(drone_body_id, physicsClientId=env.CLIENT)
+        position = list(position)
+        velocity = list(linear_velocity)
         
         # Get battery from battery simulator
         battery = env.batteries[drone_id].get_percentage() if hasattr(env, 'batteries') else 100.0
@@ -133,9 +134,10 @@ def scan_area(env, drone_id):
         }
     """
     try:
-        # Get drone position
-        state = env._getDroneStateVector(drone_id)
-        pos = state[0:3]
+        # Read camera origin from true body pose in PyBullet.
+        drone_body_id = env.DRONE_IDS[drone_id]
+        pos, _ = p.getBasePositionAndOrientation(drone_body_id, physicsClientId=env.CLIENT)
+        pos = np.array(pos)
         
         # Initialize vision system
         vision = VisionSystem(env.CLIENT)
