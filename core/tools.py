@@ -111,36 +111,29 @@ def scan_area(env, drone_id):
     Use drone camera to detect obstacles (red) and targets (green) using vision system.
     
     Args:
-        env: Environment instance
+        env: Environment instance (wrapper or inner env)
         drone_id: Integer ID of the drone
     
     Returns:
         dict: {
-            "detections": [
-                {
-                    "type": "obstacle" or "target",
-                    "color": "red" or "green",
-                    "area": int (pixels),
-                    "bbox": [x, y, w, h],
-                    "center": [x, y],
-                    "estimated_distance": float (meters),
-                    "direction": "left" or "center" or "right"
-                },
-                ...
-            ],
+            "detections": [...],
             "total_found": int,
             "obstacles_count": int,
             "targets_count": int
         }
     """
     try:
-        # Read camera origin from true body pose in PyBullet.
-        drone_body_id = env.DRONE_IDS[drone_id]
-        pos, _ = p.getBasePositionAndOrientation(drone_body_id, physicsClientId=env.CLIENT)
+        # Detect if this is wrapper or inner env
+        is_wrapper = hasattr(env, 'scene_manager')
+        inner_env = env.env if is_wrapper else env
+        
+        # Get drone position from PyBullet
+        drone_body_id = inner_env.DRONE_IDS[drone_id]
+        pos, _ = p.getBasePositionAndOrientation(drone_body_id, physicsClientId=inner_env.CLIENT)
         pos = np.array(pos)
         
-        # Initialize vision system
-        vision = VisionSystem(env.CLIENT)
+        # Initialize vision system with correct client
+        vision = VisionSystem(inner_env.CLIENT)
         
         # Capture camera frame
         frame = vision.get_camera_frame(pos, width=224, height=224)
