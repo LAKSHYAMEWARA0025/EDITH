@@ -1,0 +1,178 @@
+PyBullet Coordinate System (Bird's Eye View)
+=============================================
+
+                    +Y (FORWARD)
+                        ↑
+                        |
+                        |
+                        |
+    -X (LEFT) ←---------+--------→ +X (RIGHT)
+                        |
+                        |
+                        |
+                        ↓
+                    -Y (BACKWARD)
+
+                    +Z = UP ⊙ (out of page)
+                    -Z = DOWN ⊗ (into page)
+
+
+Drone Starting Position
+========================
+
+    [0, 0, 0.1]
+    
+    X = 0  (centered left/right)
+    Y = 0  (at starting line)
+    Z = 0.1 (just above ground)
+
+
+Example Movements
+=================
+
+1. Move Forward 10m:
+   move_drone_to(0, 0, 10, 1.5)
+   
+   Before: [0, 0, 0.1]
+   After:  [0, 10, 1.5]
+   
+        START
+          ↓
+          •  [0, 0, 0.1]
+          |
+          | +Y
+          |
+          ↓
+          •  [0, 10, 1.5]
+        TARGET
+
+
+2. Move Right 5m:
+   move_drone_to(0, 5, 0, 1.5)
+   
+   Before: [0, 0, 0.1]
+   After:  [5, 0, 1.5]
+   
+        START → TARGET
+          •  →  •
+      [0,0,0.1] [5,0,1.5]
+                +X
+
+
+3. Move Forward-Right (Diagonal):
+   move_drone_to(0, 5, 10, 1.5)
+   
+   Before: [0, 0, 0.1]
+   After:  [5, 10, 1.5]
+   
+          •  START [0, 0, 0.1]
+           \
+            \ +Y
+             \ +X
+              \
+               \
+                •  TARGET [5, 10, 1.5]
+
+
+Camera View Direction
+======================
+
+Camera looks in +Y direction (FORWARD):
+
+    Side View:
+    
+         DRONE
+           🚁
+          / \
+         /   \
+        /     \
+       /       \
+      /  CAMERA \
+     /   LOOKS   \
+    /   FORWARD   \
+   /      (+Y)     \
+  ↓                 ↓
+  
+  
+Vision System Directions
+=========================
+
+When scan_area returns:
+
+"left" → Target is at NEGATIVE X
+         Move to: [current_x - distance, current_y, current_z]
+
+"right" → Target is at POSITIVE X
+          Move to: [current_x + distance, current_y, current_z]
+
+"center" → Target is straight ahead (+Y)
+           Move to: [current_x, current_y + distance, current_z]
+
+
+Common Mistakes (BEFORE FIX)
+=============================
+
+❌ WRONG: move_drone_to(0, 10, 0, 1.5)  # Thinking X=forward
+   Result: Drone moves RIGHT, not forward
+
+✅ CORRECT: move_drone_to(0, 0, 10, 1.5)  # Y=forward
+   Result: Drone moves FORWARD
+
+
+Scene Layout Example
+====================
+
+Typical Task 1 scene:
+
+    +Y (FORWARD)
+        ↑
+        |
+        |  🟢 Target [0, 15, 0.5]
+        |
+        |  🟥 Obstacle [2, 10, 0.5]
+        |
+        |  🟥 Obstacle [-3, 8, 0.5]
+        |
+        |  🚁 Drone START [0, 0, 0.1]
+        |
+    ----+----→ +X (RIGHT)
+        0
+
+Agent should:
+1. scan_area → detects target "center" (straight ahead)
+2. get_obstacle_distances → checks path is clear
+3. move_drone_to(0, 0, 15, 0.5) → move forward to target
+
+
+Altitude (Z-axis)
+=================
+
+    +Z (UP)
+     ↑
+     |
+     | 2.0m  ← Too high (above obstacles)
+     |
+     | 1.5m  ← Good altitude (above obstacles, can see targets)
+     |
+     | 1.0m  ← Medium altitude
+     |
+     | 0.5m  ← Low altitude (target level)
+     |
+     | 0.1m  ← Ground level (drone spawn)
+     |
+     +----→ Ground
+
+
+Summary
+=======
+
+✅ X-axis: LEFT (-) / RIGHT (+)
+✅ Y-axis: BACKWARD (-) / FORWARD (+)
+✅ Z-axis: DOWN (-) / UP (+)
+
+✅ Camera looks: +Y (forward)
+✅ Drone spawns: [0, 0, 0.1]
+✅ Targets typically: Y > 0 (forward from spawn)
+
+❌ DO NOT use X for forward movement
+❌ DO NOT assume X=forward, Y=right

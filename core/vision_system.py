@@ -23,9 +23,10 @@ class VisionSystem:
         """Capture camera frame from drone position looking forward/horizontally."""
         # Camera looking FORWARD (like test_04/test_07), not down
         # Look at a point 5 meters ahead in the direction the drone is facing
+        # PyBullet coordinate system: +X=right, +Y=forward, +Z=up
         view_matrix = p.computeViewMatrix(
             cameraEyePosition=pos,
-            cameraTargetPosition=[pos[0] + 5.0, pos[1], pos[2]],  # Look forward (X direction)
+            cameraTargetPosition=[pos[0], pos[1] + 5.0, pos[2]],  # Look forward (+Y direction)
             cameraUpVector=[0, 0, 1],  # Z is up
             physicsClientId=self.client_id
         )
