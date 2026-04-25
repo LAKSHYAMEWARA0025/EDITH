@@ -64,8 +64,19 @@ print("\n[5/5] Testing step...")
 try:
     action = {"tool": "get_drone_status", "args": {"drone_id": 0}}
     result = env.step(action)
+    if isinstance(result, tuple):
+        state, reward, done, truncated, info = result
+    elif isinstance(result, dict):
+        # Backward compatibility for dict-style wrappers.
+        reward = result.get("reward")
+        done = result.get("done")
+        truncated = result.get("truncated")
+        info = result.get("info", {})
+    else:
+        raise TypeError(f"Unexpected step() return type: {type(result).__name__}")
     print(f"✓ Step successful")
-    print(f"  Reward: {result['reward']}")
+    print(f"  Reward: {reward}")
+    print(f"  Done: {done}, Truncated: {truncated}")
 except Exception as e:
     print(f"✗ Step failed: {e}")
     exit(1)
