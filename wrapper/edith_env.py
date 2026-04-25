@@ -126,7 +126,7 @@ class EDITHDroneEnv:
         try:
             # Validate action structure
             if not isinstance(action, dict):
-                return self.state(), 0.0, False, False, {
+                return self.state(), -0.1, False, False, {
                     "tool_result": {"error": f"Invalid action type: expected dict, got {type(action).__name__}"},
                     "reward_breakdown": {}
                 }
@@ -137,7 +137,7 @@ class EDITHDroneEnv:
             # Extract tool name and args
             tool_name = action.get("name", action.get("tool"))
             if not tool_name:
-                return self.state(), 0.0, False, False, {
+                return self.state(), -0.1, False, False, {
                     "tool_result": {"error": "Missing tool name in action (expected 'name' or 'tool' key)"},
                     "reward_breakdown": {}
                 }
@@ -165,6 +165,24 @@ class EDITHDroneEnv:
             # Step the environment (this moves drones towards targets)
             obs, _, _, _, _ = self.env.step(pid_action)
             
+            # Update progress tracking for each drone
+            for i in range(self.num_drones):
+                drone_pos = self.env._getDroneStateVector(i)[0:3]
+                # Find closest target
+                if self.scene_manager.target_ids:
+                    closest_target_pos = None
+                    min_dist = float('inf')
+                    for target_body_id in self.scene_manager.target_ids:
+                        target_pos, _ = p.getBasePositionAndOrientation(target_body_id, 
+                                                                        physicsClientId=self.env.CLIENT)
+                        dist = np.linalg.norm(drone_pos - np.array(target_pos))
+                        if dist < min_dist:
+                            min_dist = dist
+                            closest_target_pos = target_pos
+                    
+                    if closest_target_pos is not None:
+                        self.episode_tracker.update_position(i, drone_pos.tolist(), closest_target_pos)
+            
             # Check for target reached
             for i in range(self.num_drones):
                 drone_pos = self.env._getDroneStateVector(i)[0:3]
@@ -185,16 +203,31 @@ class EDITHDroneEnv:
             all_crashed = all(final_battery[i] <= 0 for i in range(self.num_drones))
             self.episode_tracker.finalize(final_battery, all_crashed)
             
-            # Compute reward using episode tracker
+            # Compute per-step reward
             reward_dict = self.reward_calculator.compute_reward(self.episode_tracker)
             reward = reward_dict["total"]
             
-            # Check termination
+            # Check termination conditions
             time_left = self.episode_tracker.get_time_remaining()
             targets_left = self.episode_tracker.total_targets - self.episode_tracker.targets_reached
             batteries_dead = all_crashed
+            step_limit = self.episode_tracker.step_count >= 100  # Max 100 steps per episode
             
-            done = bool(time_left <= 0 or targets_left <= 0 or batteries_dead)
+            # Episode ends if:
+            # 1. All targets reached (success)
+            # 2. Time limit exceeded (timeout)
+            # 3. All drones crashed (failure)
+            # 4. Step limit reached (prevent infinite loops)
+            done = bool(targets_left <= 0 or time_left <= 0 or batteries_dead or step_limit)
+            
+            # Add termination bonus/penalty
+            if done:
+                if targets_left <= 0:
+                    reward += 5.0  # Big bonus for completing mission
+                elif time_left <= 0 or step_limit:
+                    reward -= 1.0  # Penalty for timeout/step limit
+                elif batteries_dead:
+                    reward -= 2.0  # Bigger penalty for crash
             
             return self.state(), reward, done, False, {
                 "tool_result": result,
@@ -203,7 +236,7 @@ class EDITHDroneEnv:
             
         except Exception as e:
             # Catch any unexpected errors in step execution
-            return self.state(), 0.0, False, False, {
+            return self.state(), -0.5, False, False, {
                 "tool_result": {"error": f"Step execution failed: {str(e)}"},
                 "reward_breakdown": {}
             }

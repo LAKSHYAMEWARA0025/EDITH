@@ -22,13 +22,72 @@ class EpisodeData:
         self.all_drones_crashed = False
         self.timeout = False
         
+        # Progress tracking (anti-hacking)
+        self.step_count = 0
+        self.previous_positions = {}  # Track drone positions
+        self.distance_to_target_history = []  # Track if getting closer
+        self.stagnant_steps = 0  # Steps without meaningful movement
+        self.repeated_actions = {}  # Detect action loops
+        self.closest_distance_to_target = float('inf')  # Best distance achieved
+        
     def record_action(self, action):
-        """Log tool call."""
+        """Log tool call and detect loops."""
+        self.step_count += 1
+        
+        tool_name = action.get("name", action.get("tool"))
+        args_str = str(action.get("arguments", action.get("args", {})))
+        
         self.tool_calls.append({
-            "tool": action.get("name", action.get("tool")),
+            "tool": tool_name,
             "args": action.get("arguments", action.get("args", {})),
             "timestamp": time.time() - self.start_time
         })
+        
+        # Detect repeated actions (reward hacking)
+        action_signature = f"{tool_name}:{args_str}"
+        self.repeated_actions[action_signature] = self.repeated_actions.get(action_signature, 0) + 1
+    
+    def update_position(self, drone_id, position, target_position):
+        """Track drone movement and progress towards target."""
+        import numpy as np
+        
+        # Calculate distance to target
+        distance = np.linalg.norm(np.array(position) - np.array(target_position))
+        self.distance_to_target_history.append(distance)
+        
+        # Update closest distance
+        if distance < self.closest_distance_to_target:
+            self.closest_distance_to_target = distance
+        
+        # Check if drone is stagnant
+        if drone_id in self.previous_positions:
+            prev_pos = self.previous_positions[drone_id]
+            movement = np.linalg.norm(np.array(position) - np.array(prev_pos))
+            
+            if movement < 0.05:  # Less than 5cm movement
+                self.stagnant_steps += 1
+            else:
+                self.stagnant_steps = 0  # Reset if moving
+        
+        self.previous_positions[drone_id] = position
+    
+    def is_making_progress(self):
+        """Check if agent is making progress towards goal."""
+        if len(self.distance_to_target_history) < 5:
+            return True  # Too early to judge
+        
+        # Check if distance is decreasing over last 5 steps
+        recent = self.distance_to_target_history[-5:]
+        return recent[-1] < recent[0]  # Current < 5 steps ago
+    
+    def detect_action_loop(self):
+        """Detect if agent is stuck in action loop (reward hacking)."""
+        if not self.repeated_actions:
+            return False
+        
+        # If any action repeated more than 5 times, it's likely a loop
+        max_repeats = max(self.repeated_actions.values())
+        return max_repeats > 5
     
     def record_collision(self, drone_id=None):
         """Log collision event."""
