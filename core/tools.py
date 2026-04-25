@@ -164,10 +164,10 @@ def scan_area(env, drone_id):
         
         return {
             "detections": detections,
-            "total_found": len(detections),
-            "obstacles_count": obstacles_count,
-            "targets_count": targets_count,
-            "drone_id": drone_id
+            "total_found": int(len(detections)),
+            "obstacles_count": int(obstacles_count),
+            "targets_count": int(targets_count),
+            "drone_id": int(drone_id)
         }
         
     except Exception as e:
@@ -239,7 +239,7 @@ def move_drone_to(env, drone_id, x, y, z, timeout=10.0):
                     "current_position": current_pos.tolist(),
                     "target_position": target.tolist(),
                     "reason": f"Battery critically low: {battery:.1f}%",
-                    "battery": battery
+                    "battery": float(battery)
                 }
         
         # Check if already at target
@@ -248,7 +248,7 @@ def move_drone_to(env, drone_id, x, y, z, timeout=10.0):
                 "status": "already_at_target",
                 "current_position": current_pos.tolist(),
                 "target_position": target.tolist(),
-                "distance": distance
+                "distance": float(distance)
             }
         
         # Return movement plan
@@ -256,9 +256,9 @@ def move_drone_to(env, drone_id, x, y, z, timeout=10.0):
             "status": "planned",
             "target_position": target.tolist(),
             "current_position": current_pos.tolist(),
-            "distance": distance,
-            "estimated_time": estimated_time,
-            "drone_id": drone_id
+            "distance": float(distance),
+            "estimated_time": float(estimated_time),
+            "drone_id": int(drone_id)
         }
         
     except Exception as e:
@@ -406,16 +406,16 @@ def assign_drone_to_target(env, drone_id, target_id):
         estimated_cost = (distance * 1.0) + 5.0
         
         # Check feasibility
-        feasible = current_battery >= estimated_cost
+        feasible = bool(current_battery >= estimated_cost)
         
         return {
             "status": "assigned",
-            "drone_id": drone_id,
-            "target_id": target_id,
+            "drone_id": int(drone_id),
+            "target_id": int(target_id),
             "target_position": target_pos.tolist(),
-            "distance": distance,
-            "estimated_battery_cost": estimated_cost,
-            "current_battery": current_battery,
+            "distance": float(distance),
+            "estimated_battery_cost": float(estimated_cost),
+            "current_battery": float(current_battery),
             "feasible": feasible
         }
         
@@ -462,9 +462,9 @@ def return_drone_home(env, drone_id):
             "status": "returning",
             "home_position": home_pos.tolist(),
             "current_position": current_pos.tolist(),
-            "distance_to_home": distance,
-            "estimated_time": estimated_time,
-            "drone_id": drone_id
+            "distance_to_home": float(distance),
+            "estimated_time": float(estimated_time),
+            "drone_id": int(drone_id)
         }
         
     except Exception as e:
