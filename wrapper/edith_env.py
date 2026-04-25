@@ -153,7 +153,17 @@ class EDITHDroneEnv:
             if tool_name == "move_drone_to" and "error" not in result:
                 drone_id = args.get("drone_id", 0)
                 if "target_position" in result:
-                    self.target_positions[drone_id] = np.array(result["target_position"])
+                    new_target = np.array(result["target_position"])
+                    self.target_positions[drone_id] = new_target
+                    print(f"[DEBUG] Updated target for drone {drone_id}: {new_target}")
+            
+            # If return_drone_home was called, also update target position
+            if tool_name == "return_drone_home" and "error" not in result:
+                drone_id = args.get("drone_id", 0)
+                if "home_position" in result:
+                    new_target = np.array(result["home_position"])
+                    self.target_positions[drone_id] = new_target
+                    print(f"[DEBUG] Returning drone {drone_id} to home: {new_target}")
             
             # Execute multiple physics steps to allow drone to move towards target
             # This gives PID controller time to actually move the drone
@@ -167,6 +177,10 @@ class EDITHDroneEnv:
                 for i in range(self.num_drones):
                     target = self.target_positions[i]
                     pid_action[i] = target  # [x, y, z]
+                
+                # Debug: print on first iteration
+                if _ == 0:
+                    print(f"[DEBUG] PID action for step: {pid_action}")
                 
                 # Step the environment (this moves drones towards targets)
                 obs, _, _, _, _ = self.env.step(pid_action)
