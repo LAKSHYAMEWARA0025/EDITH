@@ -1,5 +1,5 @@
 from gym_pybullet_drones.envs.MultiHoverAviary import MultiHoverAviary
-from gym_pybullet_drones.utils.enums import Physics
+from gym_pybullet_drones.utils.enums import Physics, ActionType
 import random
 import time
 import numpy as np
@@ -26,7 +26,8 @@ class EDITHDroneEnv:
         self.env = MultiHoverAviary(
             num_drones=self.num_drones,
             gui=self.gui,
-            physics=Physics.PYB
+            physics=Physics.PYB,
+            act=ActionType.PID  # Use PID control for waypoint following
         )
         
         client_id = self.env.CLIENT
@@ -36,6 +37,9 @@ class EDITHDroneEnv:
         self.collision_detector = CollisionDetector(client_id)
         self.reward_calculator = RewardCalculator()
         self.episode_tracker = EpisodeData()
+        
+        # Store target positions for each drone (for PID controller)
+        self.target_positions = {i: self.env.INIT_XYZS[i].copy() for i in range(self.num_drones)}
 
     def _execute_tool(self, tool_name, args):
         """Execute a tool with comprehensive error handling."""
@@ -85,6 +89,9 @@ class EDITHDroneEnv:
             self.env.reset()
             self.battery_simulator.reset(self.num_drones)
             self.episode_tracker = EpisodeData()
+            
+            # Reset target positions to spawn positions
+            self.target_positions = {i: self.env.INIT_XYZS[i].copy() for i in range(self.num_drones)}
             
             # Get task config
             config = task_configs.get_task_config(self.task_type)
@@ -141,6 +148,23 @@ class EDITHDroneEnv:
             
             # Execute tool
             result = self._execute_tool(tool_name, args)
+            
+            # If move_drone_to was called successfully, update target position
+            if tool_name == "move_drone_to" and "error" not in result:
+                drone_id = args.get("drone_id", 0)
+                if "target_position" in result:
+                    self.target_positions[drone_id] = np.array(result["target_position"])
+            
+            # Step the physics simulation with PID control towards targets
+            # Build action dict for PID controller: {drone_id: [x, y, z, yaw]}
+            pid_action = {}
+            for i in range(self.num_drones):
+                target = self.target_positions[i]
+                # PID action format: [x, y, z, yaw]
+                pid_action[str(i)] = np.array([target[0], target[1], target[2], 0.0])
+            
+            # Step the environment (this moves drones towards targets)
+            obs, _, _, _, _ = self.env.step(pid_action)
             
             # Check for target reached
             for i in range(self.num_drones):
