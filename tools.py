@@ -67,7 +67,8 @@ def move_drone_to(env, drone_id, x, y, z):
 
 def get_mission_status(env):
     # Approximation of time left
-    time_elapsed = env.env.step_counter / env.env.SIM_FREQ
+    # time_elapsed = env.env.step_counter / env.env.SIM_FREQ
+    time_elapsed = env.env.step_counter / env.env.PYB_FREQ
     time_left = max(0, 600 - time_elapsed) # Assuming 10 min max
     return {
         "remaining_targets": len(env.scene_manager.target_ids),
