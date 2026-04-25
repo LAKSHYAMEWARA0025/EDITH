@@ -47,15 +47,21 @@ print("\n[4/5] Testing tools...")
 try:
     from core.tools import get_drone_status, scan_area, get_mission_status
     
-    # Tools work with both wrapper and inner env
-    # But for accurate results, pass wrapper when available
-    status = get_drone_status(env, 0)
+    inner_env = env.env
+
+    status = get_drone_status(inner_env, 0)
+    if "error" in status:
+        raise RuntimeError(status["error"])
     print(f"✓ get_drone_status: {status['position']}")
     
-    scan = scan_area(env, 0)
+    scan = scan_area(inner_env, 0)
+    if "error" in scan:
+        raise RuntimeError(scan["error"])
     print(f"✓ scan_area: {scan['total_found']} objects detected")
     
     mission = get_mission_status(env)
+    if "error" in mission:
+        raise RuntimeError(mission["error"])
     print(f"✓ get_mission_status: {mission['total_targets']} targets")
 except Exception as e:
     print(f"✗ Tools failed: {e}")
