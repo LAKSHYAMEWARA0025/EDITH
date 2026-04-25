@@ -288,9 +288,21 @@ def get_mission_status(env):
         time_elapsed = getattr(env, 'step_counter', 0) * getattr(env, 'CTRL_TIMESTEP', 0.01)
         time_remaining = max(0.0, time_limit - time_elapsed)
         
-        # Get target information
-        total_targets = len(env.scene_manager.target_ids) if hasattr(env, 'scene_manager') else 0
-        targets_reached = getattr(env, 'targets_reached', 0)
+        # Get target information - check both wrapper and inner env
+        if hasattr(env, 'scene_manager'):
+            total_targets = len(env.scene_manager.target_ids)
+        elif hasattr(env, 'env') and hasattr(env.env, 'scene_manager'):
+            total_targets = len(env.env.scene_manager.target_ids)
+        else:
+            total_targets = 0
+        
+        # Get targets reached from episode tracker if available
+        if hasattr(env, 'episode_tracker'):
+            targets_reached = env.episode_tracker.targets_reached
+        elif hasattr(env, 'env') and hasattr(env.env, 'episode_tracker'):
+            targets_reached = env.env.episode_tracker.targets_reached
+        else:
+            targets_reached = getattr(env, 'targets_reached', 0)
         
         # Get drone information
         num_drones = getattr(env, 'NUM_DRONES', 1)
@@ -301,8 +313,12 @@ def get_mission_status(env):
             position = state[0:3].tolist()
             
             battery = 100.0
-            if hasattr(env, 'batteries'):
+            if hasattr(env, 'battery_simulator'):
+                battery = env.battery_simulator.get_battery(drone_id)
+            elif hasattr(env, 'batteries'):
                 battery = env.batteries[drone_id].get_percentage()
+            elif hasattr(env, 'env') and hasattr(env.env, 'battery_simulator'):
+                battery = env.env.battery_simulator.get_battery(drone_id)
             
             # Determine status
             status = "active"
