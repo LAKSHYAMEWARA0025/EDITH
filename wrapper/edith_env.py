@@ -155,17 +155,30 @@ class EDITHDroneEnv:
                 if "target_position" in result:
                     self.target_positions[drone_id] = np.array(result["target_position"])
             
-            # Step the physics simulation with PID control towards targets
-            # Build action array for PID controller: shape (num_drones, 3)
-            pid_action = np.zeros((self.num_drones, 3))
-            for i in range(self.num_drones):
-                target = self.target_positions[i]
-                pid_action[i] = target  # [x, y, z]
+            # Execute multiple physics steps to allow drone to move towards target
+            # This gives PID controller time to actually move the drone
+            # Physics: 240Hz, Control: 48Hz (every 5 physics steps), LLM: ~1Hz
+            # So we need ~240 physics steps per LLM decision for realistic movement
+            physics_steps = 240  # ~1 second of movement at 240Hz physics
             
-            # Step the environment (this moves drones towards targets)
-            obs, _, _, _, _ = self.env.step(pid_action)
+            for _ in range(physics_steps):
+                # Build action array for PID controller: shape (num_drones, 3)
+                pid_action = np.zeros((self.num_drones, 3))
+                for i in range(self.num_drones):
+                    target = self.target_positions[i]
+                    pid_action[i] = target  # [x, y, z]
+                
+                # Step the environment (this moves drones towards targets)
+                obs, _, _, _, _ = self.env.step(pid_action)
+                
+                # Check for collisions during movement
+                for i in range(self.num_drones):
+                    drone_pos = self.env._getDroneStateVector(i)[0:3]
+                    # Simple collision check: if drone is very low, it crashed
+                    if drone_pos[2] < 0.05:
+                        self.episode_tracker.record_collision(i)
             
-            # Update progress tracking for each drone
+            # Update progress tracking for each drone (after physics steps)
             for i in range(self.num_drones):
                 drone_pos = self.env._getDroneStateVector(i)[0:3]
                 # Find closest target
@@ -211,7 +224,7 @@ class EDITHDroneEnv:
             time_left = self.episode_tracker.get_time_remaining()
             targets_left = self.episode_tracker.total_targets - self.episode_tracker.targets_reached
             batteries_dead = all_crashed
-            step_limit = self.episode_tracker.step_count >= 100  # Max 100 steps per episode
+            step_limit = self.episode_tracker.step_count >= 100  # Allow more steps since agent needs to scan + move
             
             # Episode ends if:
             # 1. All targets reached (success)

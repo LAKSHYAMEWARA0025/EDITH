@@ -60,11 +60,14 @@ class EpisodeData:
             self.closest_distance_to_target = distance
         
         # Check if drone is stagnant
+        # With 240 physics steps per agent step, drone should move significantly
         if drone_id in self.previous_positions:
             prev_pos = self.previous_positions[drone_id]
             movement = np.linalg.norm(np.array(position) - np.array(prev_pos))
             
-            if movement < 0.05:  # Less than 5cm movement
+            # Increased threshold from 0.05m to 0.5m since we now execute 240 physics steps
+            # Drone should move at least 0.5m per agent action
+            if movement < 0.5:
                 self.stagnant_steps += 1
             else:
                 self.stagnant_steps = 0  # Reset if moving
@@ -85,9 +88,11 @@ class EpisodeData:
         if not self.repeated_actions:
             return False
         
-        # If any action repeated more than 5 times, it's likely a loop
+        # Allow scan/move alternation - this is correct behavior
+        # Only penalize if EXACT same action+args repeated many times
+        # Increased threshold from 5 to 10 to allow more exploration
         max_repeats = max(self.repeated_actions.values())
-        return max_repeats > 5
+        return max_repeats > 10
     
     def record_collision(self, drone_id=None):
         """Log collision event."""

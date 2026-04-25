@@ -45,13 +45,20 @@ class RewardCalculator:
         if episode_data.targets_reached > 0:
             return 1.0
         
-        # Getting closer: small positive reward
+        # Getting closer: reward based on progress
         if episode_data.is_making_progress():
             # Reward based on how close we are
             if episode_data.closest_distance_to_target < float('inf'):
-                # Closer = higher reward (inverse distance)
-                closeness = 1.0 / (1.0 + episode_data.closest_distance_to_target)
-                return 0.1 * closeness
+                # Normalize distance to [0, 1] assuming max distance ~50m
+                max_expected_distance = 50.0
+                normalized_distance = min(1.0, episode_data.closest_distance_to_target / max_expected_distance)
+                # Closer = higher reward (inverse)
+                closeness = 1.0 - normalized_distance
+                return 0.3 * closeness  # Increased from 0.1 to 0.3 for better gradient
+        
+        # Small reward just for moving (not stagnant)
+        if episode_data.stagnant_steps < 5:
+            return 0.05
         
         return 0.0
 
@@ -72,20 +79,23 @@ class RewardCalculator:
         """Penalties for reward hacking behaviors."""
         penalty = 0.0
         
-        # Penalty for action loops (repeating same action)
+        # Penalty for action loops (repeating EXACT same action+args)
+        # Increased threshold to 10 to allow scan/move patterns
         if episode_data.detect_action_loop():
-            penalty += 0.2
+            penalty += 0.1  # Reduced from 0.2
         
-        # Penalty for excessive tool calls without progress
-        if episode_data.step_count > 20 and episode_data.targets_reached == 0:
+        # Penalty for excessive steps without ANY progress
+        if episode_data.step_count > 30 and episode_data.targets_reached == 0:
             if not episode_data.is_making_progress():
-                penalty += 0.1
+                # Only penalize if truly stuck, not if exploring
+                if episode_data.stagnant_steps > 15:
+                    penalty += 0.1
         
-        # Penalty for moving away from target
-        if len(episode_data.distance_to_target_history) >= 2:
-            recent_distance = episode_data.distance_to_target_history[-1]
-            prev_distance = episode_data.distance_to_target_history[-2]
-            if recent_distance > prev_distance + 0.5:  # Moving away significantly
+        # Penalty for moving significantly away from target repeatedly
+        if len(episode_data.distance_to_target_history) >= 5:
+            recent_distances = episode_data.distance_to_target_history[-5:]
+            # Check if consistently moving away (all 5 recent steps increased distance)
+            if all(recent_distances[i] > recent_distances[i-1] + 1.0 for i in range(1, len(recent_distances))):
                 penalty += 0.05
         
         return penalty
