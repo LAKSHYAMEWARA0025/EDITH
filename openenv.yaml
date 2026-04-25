@@ -1,0 +1,11 @@
+name: edith-mission-commander
+version: 1.0.0
+tools:
+  - get_drone_status
+  - move_drone_to
+  - get_obstacle_distances
+  - get_camera_frame
+  - scan_area
+  - get_mission_status
+  - assign_drone_to_target
+  - return_drone_home
