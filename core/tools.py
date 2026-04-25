@@ -47,8 +47,8 @@ def get_drone_status(env, drone_id):
         return {
             "position": position,
             "velocity": velocity,
-            "battery_percentage": battery,
-            "drone_id": drone_id
+            "battery_percentage": float(battery),
+            "drone_id": int(drone_id)
         }
     except Exception as e:
         return {"error": f"Failed to get drone status: {str(e)}"}
@@ -328,16 +328,16 @@ def get_mission_status(env):
                 "status": status
             })
         
-        # Check if mission complete
-        mission_complete = (targets_reached >= total_targets) and all(
+        # Check if mission complete (convert to Python bool)
+        mission_complete = bool((targets_reached >= total_targets) and all(
             d["status"] != "crashed" for d in drones
-        )
+        ))
         
         return {
-            "time_remaining": time_remaining,
-            "time_elapsed": time_elapsed,
-            "total_targets": total_targets,
-            "targets_reached": targets_reached,
+            "time_remaining": float(time_remaining),
+            "time_elapsed": float(time_elapsed),
+            "total_targets": int(total_targets),
+            "targets_reached": int(targets_reached),
             "drones": drones,
             "mission_complete": mission_complete
         }
