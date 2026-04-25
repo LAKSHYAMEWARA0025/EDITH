@@ -190,7 +190,7 @@ class EDITHDroneEnv:
         try:
             return {
                 "mission_status": get_mission_status(self),
-                "drones": {i: get_drone_status(self, i) for i in range(self.num_drones)}
+                "drones": {str(i): get_drone_status(self, i) for i in range(self.num_drones)}
             }
         except Exception as e:
             return {"error": f"Failed to get state: {str(e)}"}

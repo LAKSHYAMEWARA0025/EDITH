@@ -177,7 +177,7 @@ def run_episode(client: OpenAI, task: str, server_url: str) -> float:
         print(f"[INFO] Initial state:")
         print(f"       Mission: {state['mission_status']['total_targets']} targets")
         print(f"       Time limit: {state['mission_status']['time_remaining']:.1f}s")
-        print(f"       Drone position: {state['drones'][0]['position']}\n")
+        print(f"       Drone position: {state['drones']['0']['position']}\n")
         
         # Initialize conversation
         messages = [
