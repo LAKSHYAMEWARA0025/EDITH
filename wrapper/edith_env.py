@@ -156,12 +156,12 @@ class EDITHDroneEnv:
                     self.target_positions[drone_id] = np.array(result["target_position"])
             
             # Step the physics simulation with PID control towards targets
-            # Build action dict for PID controller: {drone_id: [x, y, z, yaw]}
+            # Build action dict for PID controller: {drone_id: [x, y, z]}
             pid_action = {}
             for i in range(self.num_drones):
                 target = self.target_positions[i]
-                # PID action format: [x, y, z, yaw]
-                pid_action[str(i)] = np.array([target[0], target[1], target[2], 0.0])
+                # PID action format: [x, y, z] (3D position)
+                pid_action[str(i)] = np.array([target[0], target[1], target[2]])
             
             # Step the environment (this moves drones towards targets)
             obs, _, _, _, _ = self.env.step(pid_action)
