@@ -13,7 +13,7 @@ Usage:
         python inference_drone.py --task task1
 
 Requirements:
-    - HF_TOKEN environment variable (Hugging Face API token)
+    - HF_TOKEN environment variable (Hugging Face API token) OR OPENAI_API_KEY
     - Server running on http://localhost:8000
 """
 
@@ -22,15 +22,28 @@ import json
 import argparse
 import requests
 from typing import Optional, List, Dict, Any
-from openai import OpenAI
 
 # Configuration
-API_KEY = os.getenv("HF_TOKEN", None)
-if API_KEY is None:
-    raise ValueError("HF_TOKEN environment variable is required")
+HF_TOKEN = os.getenv("HF_TOKEN", None)
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", None)
 
-API_BASE_URL = os.getenv("API_BASE_URL", "https://api-inference.huggingface.co/v1")
-MODEL_NAME = os.getenv("MODEL_NAME", "meta-llama/Llama-3.2-3B-Instruct")
+# Determine which API to use
+if OPENAI_API_KEY:
+    USE_OPENAI = True
+    API_KEY = OPENAI_API_KEY
+    API_BASE_URL = "https://api.openai.com/v1"
+    MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4o-mini")
+    print("[INFO] Using OpenAI API")
+elif HF_TOKEN:
+    USE_OPENAI = False
+    API_KEY = HF_TOKEN
+    # Use HF Inference API directly (not OpenAI-compatible endpoint)
+    HF_MODEL = os.getenv("MODEL_NAME", "meta-llama/Llama-3.2-3B-Instruct")
+    HF_API_URL = f"https://api-inference.huggingface.co/models/{HF_MODEL}"
+    print(f"[INFO] Using Hugging Face Inference API: {HF_MODEL}")
+else:
+    raise ValueError("Either HF_TOKEN or OPENAI_API_KEY environment variable is required")
+
 SERVER_URL = os.getenv("SERVER_URL", "http://localhost:8000")
 
 TEMPERATURE = 0.3
@@ -105,16 +118,56 @@ def log_end(done: bool, steps: int, total_reward: float, rewards: List[float]) -
     print(f"{'='*60}\n")
 
 
-def ask_llm(client: OpenAI, messages: List[Dict[str, str]]) -> str:
+def ask_llm(messages: List[Dict[str, str]]) -> str:
     """Query LLM for next action."""
     try:
-        resp = client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=messages,
-            temperature=TEMPERATURE,
-            max_tokens=MAX_TOKENS,
-        )
-        return (resp.choices[0].message.content or "").strip()
+        if USE_OPENAI:
+            # Use OpenAI API
+            from openai import OpenAI
+            client = OpenAI(api_key=API_KEY, base_url=API_BASE_URL)
+            resp = client.chat.completions.create(
+                model=MODEL_NAME,
+                messages=messages,
+                temperature=TEMPERATURE,
+                max_tokens=MAX_TOKENS,
+            )
+            return (resp.choices[0].message.content or "").strip()
+        else:
+            # Use Hugging Face Inference API
+            # Convert messages to prompt format
+            prompt = ""
+            for msg in messages:
+                role = msg["role"]
+                content = msg["content"]
+                if role == "system":
+                    prompt += f"<|system|>\n{content}\n"
+                elif role == "user":
+                    prompt += f"<|user|>\n{content}\n"
+                elif role == "assistant":
+                    prompt += f"<|assistant|>\n{content}\n"
+            prompt += "<|assistant|>\n"
+            
+            headers = {"Authorization": f"Bearer {API_KEY}"}
+            payload = {
+                "inputs": prompt,
+                "parameters": {
+                    "max_new_tokens": MAX_TOKENS,
+                    "temperature": TEMPERATURE,
+                    "return_full_text": False
+                }
+            }
+            
+            response = requests.post(HF_API_URL, headers=headers, json=payload)
+            response.raise_for_status()
+            result = response.json()
+            
+            if isinstance(result, list) and len(result) > 0:
+                return result[0].get("generated_text", "").strip()
+            elif isinstance(result, dict):
+                return result.get("generated_text", "").strip()
+            else:
+                raise ValueError(f"Unexpected HF API response format: {result}")
+                
     except Exception as e:
         print(f"[DEBUG] LLM error: {type(e).__name__}: {e}")
         raise
@@ -160,13 +213,13 @@ def step_env(server_url: str, action: Dict[str, Any]) -> Dict[str, Any]:
     return response.json()
 
 
-def run_episode(client: OpenAI, task: str, server_url: str) -> float:
+def run_episode(task: str, server_url: str) -> float:
     """Run one episode with LLM agent."""
     rewards: List[float] = []
     total_reward = 0.0
     steps_taken = 0
     
-    log_start(task, MODEL_NAME)
+    log_start(task, MODEL_NAME if USE_OPENAI else HF_MODEL)
     
     try:
         # Reset environment
@@ -193,7 +246,7 @@ def run_episode(client: OpenAI, task: str, server_url: str) -> float:
                 break
             
             # Get LLM decision
-            raw_response = ask_llm(client, messages)
+            raw_response = ask_llm(messages)
             action = parse_action(raw_response)
             
             # Fallback if parsing fails
@@ -251,7 +304,8 @@ def main():
     print("EDITH DRONE ENVIRONMENT - INFERENCE TEST")
     print("="*60)
     print(f"Task: {args.task}")
-    print(f"Model: {MODEL_NAME}")
+    print(f"Model: {MODEL_NAME if USE_OPENAI else HF_MODEL}")
+    print(f"API: {'OpenAI' if USE_OPENAI else 'Hugging Face'}")
     print(f"Server: {args.server}")
     print(f"Max steps: {MAX_STEPS}")
     print("="*60 + "\n")
@@ -266,11 +320,8 @@ def main():
         print(f"        Make sure server is running with: EDITH_GUI=true uvicorn server.app:app")
         return
     
-    # Initialize LLM client
-    client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
-    
     # Run episode
-    total_reward = run_episode(client, args.task, args.server)
+    total_reward = run_episode(args.task, args.server)
     
     print(f"\n[FINAL] Total reward: {total_reward:.3f}")
     print("\nTest complete! Check the PyBullet GUI window for visualization.")
