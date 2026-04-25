@@ -182,6 +182,19 @@ def move_drone_to(env, drone_id, x, y, z, timeout=10.0):
         }
     """
     try:
+        # Validate numeric parameters
+        try:
+            x = float(x)
+            y = float(y)
+            z = float(z)
+            timeout = float(timeout)
+        except (ValueError, TypeError) as e:
+            return {"error": f"Invalid coordinate types: x, y, z, timeout must be numeric. {str(e)}"}
+        
+        # Validate timeout is positive
+        if timeout <= 0:
+            return {"error": f"Invalid timeout: {timeout}. Must be positive."}
+        
         target = np.array([x, y, z])
         start_time = time.time()
         threshold = 0.3  # Consider "reached" if within 0.3m
@@ -354,6 +367,12 @@ def assign_drone_to_target(env, drone_id, target_id):
         }
     """
     try:
+        # Validate target_id is an integer
+        try:
+            target_id = int(target_id)
+        except (ValueError, TypeError):
+            return {"error": f"Invalid target_id type: expected int, got {type(target_id).__name__}"}
+        
         # Get drone position and battery
         state = env._getDroneStateVector(drone_id)
         drone_pos = state[0:3]
@@ -363,8 +382,11 @@ def assign_drone_to_target(env, drone_id, target_id):
             current_battery = env.batteries[drone_id].get_percentage()
         
         # Get target position
-        if not hasattr(env, 'scene_manager') or target_id >= len(env.scene_manager.target_ids):
-            return {"error": f"Invalid target_id: {target_id}"}
+        if not hasattr(env, 'scene_manager'):
+            return {"error": "Environment does not have scene_manager (wrapper required)"}
+        
+        if target_id < 0 or target_id >= len(env.scene_manager.target_ids):
+            return {"error": f"Invalid target_id: {target_id}. Valid range: 0-{len(env.scene_manager.target_ids)-1}"}
         
         target_body_id = env.scene_manager.target_ids[target_id]
         target_pos, _ = p.getBasePositionAndOrientation(target_body_id, physicsClientId=env.CLIENT)
@@ -458,6 +480,19 @@ def get_camera_frame(env, drone_id, width=224, height=224):
         }
     """
     try:
+        # Validate width and height
+        try:
+            width = int(width)
+            height = int(height)
+        except (ValueError, TypeError):
+            return {"error": f"Invalid width/height types: expected int"}
+        
+        if width <= 0 or height <= 0:
+            return {"error": f"Invalid dimensions: width={width}, height={height}. Must be positive."}
+        
+        if width > 1920 or height > 1920:
+            return {"error": f"Dimensions too large: width={width}, height={height}. Max 1920x1920."}
+        
         # Get drone position
         state = env._getDroneStateVector(drone_id)
         pos = state[0:3]
