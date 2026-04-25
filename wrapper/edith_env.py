@@ -1,18 +1,18 @@
 from gym_pybullet_drones.envs.MultiHoverAviary import MultiHoverAviary
 from gym_pybullet_drones.utils.enums import Physics
 
-from scene_manager import SceneManager
-from vision_system import VisionSystem
-from battery_simulator import BatterySimulator
-from collision_detector import CollisionDetector
-from reward_calculator import RewardCalculator
-from episode_tracker import EpisodeData
-from tools import (
+from core.scene_manager import SceneManager
+from core.vision_system import VisionSystem
+from core.battery_simulator import BatterySimulator
+from core.collision_detector import CollisionDetector
+from wrapper.reward_calculator import RewardCalculator
+from wrapper.episode_tracker import EpisodeData
+from core.tools import (
     get_drone_status, get_obstacle_distances, scan_area,
     move_drone_to, get_mission_status, assign_drone_to_target,
     return_drone_home, get_camera_frame
 )
-import task_configs
+from wrapper import task_configs
 
 class EDITHDroneEnv:
     def __init__(self, num_drones=1, task_type="task1", gui=False):
