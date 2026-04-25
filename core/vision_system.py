@@ -21,10 +21,12 @@ class VisionSystem:
 
     def get_camera_frame(self, pos, width=224, height=224):
         """Capture camera frame from specified position looking down."""
+        # Camera looking down with proper up vector
+        # When looking down, up vector must be horizontal to avoid gimbal lock
         view_matrix = p.computeViewMatrix(
             cameraEyePosition=pos,
-            cameraTargetPosition=[pos[0], pos[1], pos[2]-1], 
-            cameraUpVector=[0, 1, 0],
+            cameraTargetPosition=[pos[0], pos[1], pos[2]-1],  # Look down
+            cameraUpVector=[1, 0, 0],  # Horizontal up vector (was [0,1,0] - wrong!)
             physicsClientId=self.client_id
         )
         proj_matrix = p.computeProjectionMatrixFOV(
