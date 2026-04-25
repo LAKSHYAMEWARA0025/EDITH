@@ -30,7 +30,7 @@ API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
 if API_KEY is None:
     raise ValueError("HF_TOKEN environment variable is required")
 
-MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-3B")
+MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-7B-Instruct")
 SERVER_URL = os.getenv("SERVER_URL", "http://localhost:8000")
 
 TEMPERATURE = 0.3
