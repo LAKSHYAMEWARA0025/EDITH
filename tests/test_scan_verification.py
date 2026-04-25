@@ -30,8 +30,16 @@ print(f"  Targets: {len(env.scene_manager.target_ids)}")
 # Test 1: Scan at spawn height (should see nothing)
 print("\n[3/4] Test 1: Scan at spawn height...")
 status = get_drone_status(env, 0)
-print(f"  Drone position: {status['position']}")
-print(f"  Drone height (z): {status['position'][2]:.3f}m")
+if 'error' in status:
+    print(f"  ERROR getting drone status: {status['error']}")
+    print("  Trying to get position directly from env...")
+    drone_pos = env.env._getDroneStateVector(0)[0:3]
+    print(f"  Drone position: {drone_pos.tolist()}")
+    print(f"  Drone height (z): {drone_pos[2]:.3f}m")
+else:
+    print(f"  Drone position: {status['position']}")
+    print(f"  Drone height (z): {status['position'][2]:.3f}m")
+    drone_pos = status['position']
 
 scan1 = scan_area(env, 0)
 print(f"  Objects detected: {scan1['total_found']}")
@@ -56,8 +64,14 @@ time.sleep(0.1)
 
 # Check new position
 status2 = get_drone_status(env, 0)
-print(f"  New drone position: {status2['position']}")
-print(f"  New drone height (z): {status2['position'][2]:.3f}m")
+if 'error' in status2:
+    drone_pos2 = env.env._getDroneStateVector(0)[0:3]
+    print(f"  New drone position: {drone_pos2.tolist()}")
+    print(f"  New drone height (z): {drone_pos2[2]:.3f}m")
+else:
+    print(f"  New drone position: {status2['position']}")
+    print(f"  New drone height (z): {status2['position'][2]:.3f}m")
+    drone_pos2 = status2['position']
 
 # Scan again
 scan2 = scan_area(env, 0)
@@ -73,7 +87,8 @@ if scan2['total_found'] > 0:
 print("\n" + "=" * 60)
 print("VERIFICATION RESULTS:")
 print("=" * 60)
-print(f"At spawn height ({status['position'][2]:.3f}m): {scan1['total_found']} objects")
+drone_z1 = drone_pos[2] if isinstance(drone_pos, list) else drone_pos[2]
+print(f"At spawn height ({drone_z1:.3f}m): {scan1['total_found']} objects")
 print(f"At 2.0m height: {scan2['total_found']} objects")
 
 if scan1['total_found'] == 0 and scan2['total_found'] > 0:
