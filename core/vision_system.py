@@ -20,13 +20,13 @@ class VisionSystem:
         self.client_id = client_id
 
     def get_camera_frame(self, pos, width=224, height=224):
-        """Capture camera frame from specified position looking down."""
-        # Camera looking down with proper up vector
-        # When looking down, up vector must be horizontal to avoid gimbal lock
+        """Capture camera frame from drone position looking forward/horizontally."""
+        # Camera looking FORWARD (like test_04/test_07), not down
+        # Look at a point 5 meters ahead in the direction the drone is facing
         view_matrix = p.computeViewMatrix(
             cameraEyePosition=pos,
-            cameraTargetPosition=[pos[0], pos[1], pos[2]-1],  # Look down
-            cameraUpVector=[1, 0, 0],  # Horizontal up vector (was [0,1,0] - wrong!)
+            cameraTargetPosition=[pos[0] + 5.0, pos[1], pos[2]],  # Look forward (X direction)
+            cameraUpVector=[0, 0, 1],  # Z is up
             physicsClientId=self.client_id
         )
         proj_matrix = p.computeProjectionMatrixFOV(
