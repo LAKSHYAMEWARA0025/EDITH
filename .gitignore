@@ -2,3 +2,34 @@ venv/
 __pycache__/
 *.pyc
 .env
+
+# Temporary files
+tmp/
+*.tmp
+test_script.py
+
+# PyBullet outputs
+test_camera_output.png
+test_opencv_*.png
+
+# Gym-pybullet-drones (external dependency)
+gym-pybullet-drones/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+*.egg-info/
+dist/
+build/
+*.so
+
+# Logs
+*.log
