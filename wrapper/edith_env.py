@@ -1,5 +1,9 @@
 from gym_pybullet_drones.envs.MultiHoverAviary import MultiHoverAviary
 from gym_pybullet_drones.utils.enums import Physics
+import random
+import time
+import numpy as np
+import pybullet as p
 
 from core.scene_manager import SceneManager
 from core.vision_system import VisionSystem
@@ -54,35 +58,74 @@ class EDITHDroneEnv:
         self.battery_simulator.reset(self.num_drones)
         self.episode_tracker = EpisodeData()
         
-        config = task_configs.TASK1_CONFIG
-        self.scene_manager.clear_scene()
-        self.scene_manager.place_obstacles(config["obstacle_placement_zones"])
-        self.scene_manager.place_targets(config["target_zones"])
+        # Get task config
+        config = task_configs.get_task_config(self.task_type)
+        
+        # Use Person A's randomization methods
+        if self.task_type == "task1":
+            num_obstacles = random.choice(config["num_obstacles_range"])
+            self.scene_manager.randomize_scene_task1(num_obstacles)
+        elif self.task_type == "task2":
+            num_obstacles = random.choice(config["num_obstacles_range"])
+            battery_start = random.choice(config["battery_start_range"])
+            self.battery_simulator.battery_levels[0] = battery_start
+            self.scene_manager.randomize_scene_task2(num_obstacles)
+        elif self.task_type == "task3":
+            num_obstacles = random.choice(config["num_obstacles_range"])
+            num_targets = random.choice(config["num_targets_range"])
+            self.scene_manager.randomize_scene_task3(num_obstacles, num_targets)
+        
+        # Initialize episode tracking
+        self.episode_tracker.total_targets = len(self.scene_manager.target_ids)
+        self.episode_tracker.start_time = time.time()
+        self.episode_tracker.time_limit = config["time_limit"]
+        
         return self.state(), {}
 
     def step(self, action):
+        # Record action
         self.episode_tracker.record_action(action)
         
-        # Robust fallback: check for either 'name' or 'tool' keys in the JSON
+        # Execute tool
         tool_name = action.get("name", action.get("tool"))
         args = action.get("arguments", action.get("args", {}))
-        
         result = self._execute_tool(tool_name, args)
-
-        reward = self.reward_calculator.compute_reward(self.episode_tracker)
         
-        status = get_mission_status(self)
-        time_left = status.get("time_left", 0)
-        targets_left = status.get("remaining_targets", 0)
+        # Check for target reached
+        for i in range(self.num_drones):
+            drone_pos = self.env._getDroneStateVector(i)[0:3]
+            for target_idx, target_body_id in enumerate(self.scene_manager.target_ids):
+                target_pos, _ = p.getBasePositionAndOrientation(target_body_id, 
+                                                                physicsClientId=self.env.CLIENT)
+                distance = np.linalg.norm(drone_pos - np.array(target_pos))
+                if distance < 0.5:  # Within 0.5m = reached
+                    self.episode_tracker.record_target_reached(target_idx)
+                    # Remove target so it's not counted twice
+                    p.removeBody(target_body_id, physicsClientId=self.env.CLIENT)
+                    self.scene_manager.target_ids.pop(target_idx)
+                    break
         
-        try:
-            batteries_dead = all(self.battery_simulator.get_battery(i) <= 0 for i in range(self.num_drones))
-        except Exception:
-            batteries_dead = False # Safety fallback in case battery logic isn't fully wired
+        # Finalize episode data
+        final_battery = {i: self.battery_simulator.get_battery(i) 
+                         for i in range(self.num_drones)}
+        all_crashed = all(final_battery[i] <= 0 for i in range(self.num_drones))
+        self.episode_tracker.finalize(final_battery, all_crashed)
+        
+        # Compute reward using episode tracker
+        reward_dict = self.reward_calculator.compute_reward(self.episode_tracker)
+        reward = reward_dict["total"]
+        
+        # Check termination
+        time_left = self.episode_tracker.get_time_remaining()
+        targets_left = self.episode_tracker.total_targets - self.episode_tracker.targets_reached
+        batteries_dead = all_crashed
         
         done = bool(time_left <= 0 or targets_left <= 0 or batteries_dead)
         
-        return self.state(), reward, done, False, {"tool_result": result}
+        return self.state(), reward, done, False, {
+            "tool_result": result,
+            "reward_breakdown": reward_dict
+        }
 
     def state(self):
         return {

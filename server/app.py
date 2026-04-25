@@ -4,10 +4,10 @@ from typing import Dict, Any
 import sys
 import os
 
-# Add parent directory to path to import edith_env
+# Add parent directory to path to import wrapper modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from edith_env import EDITHDroneEnv
+from wrapper.edith_env import EDITHDroneEnv
 
 app = FastAPI()
 
