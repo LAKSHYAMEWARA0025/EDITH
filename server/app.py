@@ -39,8 +39,12 @@ async def validation_exception_handler(request: Request, exc: ValidationError):
     )
 
 # Instantiate global environment instance as requested
+# GUI can be enabled via EDITH_GUI=true environment variable
 try:
-    env = EDITHDroneEnv(task_type="task1", gui=False)
+    gui_enabled = os.getenv("EDITH_GUI", "false").lower() in ("true", "1", "yes")
+    task_type = os.getenv("EDITH_TASK", "task1")
+    print(f"Initializing EDITH environment: task={task_type}, gui={gui_enabled}")
+    env = EDITHDroneEnv(task_type=task_type, gui=gui_enabled)
 except Exception as e:
     print(f"WARNING: Failed to initialize environment: {e}")
     env = None
