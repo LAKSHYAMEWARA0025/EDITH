@@ -31,3 +31,10 @@ class CollisionDetector:
             distances.append(dist)
             
         return distances
+
+    def check_proximity_warning(self, pos, threshold=0.3):
+        distances = self.raycast(pos)
+        if min(distances) < threshold:
+            return True
+        return False
+

@@ -12,3 +12,6 @@ class EpisodeData:
 
     def log_milestone(self, milestone_name):
         self.milestones.append(milestone_name)
+
+    def record_action(self, action):
+        self.tool_calls.append(action)
