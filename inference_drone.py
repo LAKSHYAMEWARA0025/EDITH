@@ -30,7 +30,7 @@ API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
 if API_KEY is None:
     raise ValueError("HF_TOKEN environment variable is required")
 
-MODEL_NAME = os.getenv("MODEL_NAME", "meta-llama/Llama-3.2-3B-Instruct")
+MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-3B")
 SERVER_URL = os.getenv("SERVER_URL", "http://localhost:8000")
 
 TEMPERATURE = 0.3
@@ -49,6 +49,7 @@ COORDINATE SYSTEM (IMPORTANT):
 - Z-axis: up/down (positive Z = up, negative Z = down)
 - Drone starts at [0, 0, 0.1] (origin, ground level)
 - Targets are typically at Z = 0.5 to 1.5m (above ground)
+- MAXIMUM safe altitude: Z = 2.0m (don't go higher!)
 - You MUST adjust altitude (Z) to reach targets - they are not at ground level!
 
 Available tools (respond with a single JSON object):
@@ -61,8 +62,8 @@ Available tools (respond with a single JSON object):
      * altitude: "above"/"level"/"below" (vertical - IMPORTANT!)
      * estimated_distance: meters away
    - Use this for vision - it processes camera data and returns compact results
-   - If target is "above", you MUST increase Z coordinate
-   - If target is "below", you MUST decrease Z coordinate
+   - If target is "above", increase Z slightly (to 1.0-1.5m, NOT 7.5m!)
+   - If target is "below", decrease Z slightly
 
 3. {"tool": "get_obstacle_distances", "args": {"drone_id": 0}}
    - Returns: distances to obstacles in 6 directions (north, south, east, west, up, down)
@@ -70,8 +71,8 @@ Available tools (respond with a single JSON object):
 4. {"tool": "move_drone_to", "args": {"drone_id": 0, "x": 1.0, "y": 2.0, "z": 1.5}}
    - Plans movement to target coordinates (absolute position, not relative)
    - X: left(-) / right(+), Y: backward(-) / forward(+), Z: down(-) / up(+)
-   - IMPORTANT: You MUST set Z coordinate! Don't keep it at 0.1!
-   - Typical target altitude: Z = 0.5 to 1.5m
+   - IMPORTANT: Set Z between 0.5 and 1.5m for targets (NOT 7.5m!)
+   - Typical good values: Z = 1.0m or Z = 1.5m
    - Returns: distance, estimated time, current position
 
 5. {"tool": "get_mission_status", "args": {}}
@@ -86,15 +87,19 @@ Available tools (respond with a single JSON object):
 Strategy tips:
 - Start by scanning the area to find targets
 - Pay attention to BOTH direction AND altitude from scan_area
-- If target is "above", increase Z (e.g., from 0.1 to 1.0 or 1.5)
+- If target is "above", increase Z to 1.0m or 1.5m (NOT higher!)
 - If target is "left", decrease X; if "right", increase X
 - If target is "center", move forward in +Y direction
 - Adjust all three coordinates (X, Y, Z) to reach the target
+- Keep Z between 0.5m and 1.5m - targets are in this range
 - Check mission status to see how many targets remain
 - Avoid obstacles detected by scan_area
 - Complete mission before time runs out
 
-CRITICAL: Targets are NOT at ground level (Z=0.1). You MUST change altitude!
+CRITICAL: 
+- Targets are at Z = 0.5 to 1.5m (NOT at ground level, NOT at 7.5m!)
+- Use Z = 1.0m or Z = 1.5m for most targets
+- Never set Z above 2.0m!
 
 Respond with ONLY a valid JSON object, no explanation.
 Example: {"tool": "scan_area", "args": {"drone_id": 0}}

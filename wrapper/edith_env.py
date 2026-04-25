@@ -256,7 +256,8 @@ class EDITHDroneEnv:
                 elif batteries_dead:
                     reward -= 2.0  # Bigger penalty for crash
             
-            return self.state(), reward, done, False, {
+            # Ensure done is Python bool, not numpy.bool_
+            return self.state(), float(reward), bool(done), False, {
                 "tool_result": result,
                 "reward_breakdown": reward_dict
             }
