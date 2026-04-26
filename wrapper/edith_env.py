@@ -40,6 +40,10 @@ class EDITHDroneEnv:
         
         # Store target positions for each drone (for PID controller)
         self.target_positions = {i: self.env.INIT_XYZS[i].copy() for i in range(self.num_drones)}
+        
+        # Per-instance random number generators (thread-safe)
+        self.rng = random.Random()
+        self.np_rng = np.random.RandomState()
 
     def _execute_tool(self, tool_name, args):
         """Execute a tool with comprehensive error handling."""
@@ -83,12 +87,23 @@ class EDITHDroneEnv:
             # Catch any other unexpected errors
             return {"error": f"Tool execution failed: {str(e)}"}
 
-    def reset(self):
-        """Reset environment with error handling."""
+    def reset(self, seed=None):
+        """Reset environment with optional seed for deterministic map generation.
+        
+        Args:
+            seed: Optional random seed for deterministic obstacle/target placement
+        """
         try:
+            # Reset PyBullet environment first
             self.env.reset()
             self.battery_simulator.reset(self.num_drones)
             self.episode_tracker = EpisodeData()
+            
+            # Set per-instance random seed (thread-safe, no global state)
+            if seed is not None:
+                self.rng.seed(seed)
+                self.np_rng.seed(seed)
+                print(f"[DEBUG] Set seed={seed} for deterministic scene generation")
             
             # Reset target positions to spawn positions
             self.target_positions = {i: self.env.INIT_XYZS[i].copy() for i in range(self.num_drones)}
@@ -96,19 +111,19 @@ class EDITHDroneEnv:
             # Get task config
             config = task_configs.get_task_config(self.task_type)
             
-            # Use Person A's randomization methods
+            # Use per-instance RNG for deterministic randomization
             if self.task_type == "task1":
-                num_obstacles = random.choice(config["num_obstacles_range"])
-                self.scene_manager.randomize_scene_task1(num_obstacles)
+                num_obstacles = self.rng.choice(config["num_obstacles_range"])
+                self.scene_manager.randomize_scene_task1(num_obstacles, rng=self.np_rng)
             elif self.task_type == "task2":
-                num_obstacles = random.choice(config["num_obstacles_range"])
-                battery_start = random.choice(config["battery_start_range"])
+                num_obstacles = self.rng.choice(config["num_obstacles_range"])
+                battery_start = self.rng.choice(config["battery_start_range"])
                 self.battery_simulator.battery_levels[0] = battery_start
-                self.scene_manager.randomize_scene_task2(num_obstacles)
+                self.scene_manager.randomize_scene_task2(num_obstacles, rng=self.np_rng)
             elif self.task_type == "task3":
-                num_obstacles = random.choice(config["num_obstacles_range"])
-                num_targets = random.choice(config["num_targets_range"])
-                self.scene_manager.randomize_scene_task3(num_obstacles, num_targets)
+                num_obstacles = self.rng.choice(config["num_obstacles_range"])
+                num_targets = self.rng.choice(config["num_targets_range"])
+                self.scene_manager.randomize_scene_task3(num_obstacles, num_targets, rng=self.np_rng)
             
             # Initialize episode tracking
             self.episode_tracker.total_targets = len(self.scene_manager.target_ids)
@@ -116,7 +131,10 @@ class EDITHDroneEnv:
             self.episode_tracker.time_limit = config["time_limit"]
             
             # Debug logging
-            print(f"[DEBUG] Reset complete: {len(self.scene_manager.target_ids)} targets spawned")
+            if seed is not None:
+                print(f"[DEBUG] Reset with seed={seed}: {len(self.scene_manager.target_ids)} targets spawned")
+            else:
+                print(f"[DEBUG] Reset complete: {len(self.scene_manager.target_ids)} targets spawned")
             print(f"[DEBUG] Episode tracker total_targets: {self.episode_tracker.total_targets}")
             
             return self.state(), {}

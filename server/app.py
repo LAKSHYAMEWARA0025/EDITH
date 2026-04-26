@@ -42,6 +42,10 @@ class StepAction(BaseModel):
     tool: str
     args: Dict[str, Any]
 
+class ResetRequest(BaseModel):
+    seed: Optional[int] = None
+    task_type: Optional[str] = "task1"
+
 class SessionRequest(BaseModel):
     session_id: str
 
@@ -59,14 +63,40 @@ def get_or_create_env(session_id: str, task_type: str = "task1") -> EDITHDroneEn
     return environments[session_id]
 
 @app.post("/reset")
-def reset(x_session_id: Optional[str] = Header(None), task_type: str = "task1"):
-    """Reset the environment. Generates a new session ID if none is provided."""
+def reset(
+    request: Optional[ResetRequest] = None,
+    x_session_id: Optional[str] = Header(None),
+    task_type: str = "task1",
+    seed: Optional[int] = None
+):
+    """Reset the environment with optional seed for deterministic map generation.
+    
+    Args:
+        request: Optional JSON body with seed and task_type
+        x_session_id: Session ID from header
+        task_type: Task type (query param, overridden by request body)
+        seed: Random seed (query param, overridden by request body)
+    """
     try:
         # Generate a unique ID if the client didn't send one
         sid = x_session_id or str(uuid.uuid4())
         
-        env_instance = get_or_create_env(sid, task_type)
-        state, info = env_instance.reset()
+        # Priority: request body > query params > defaults
+        if request:
+            final_seed = request.seed if request.seed is not None else seed
+            final_task = request.task_type or task_type
+        else:
+            final_seed = seed
+            final_task = task_type
+        
+        env_instance = get_or_create_env(sid, final_task)
+        
+        # Pass seed to environment reset for deterministic map generation
+        if final_seed is not None:
+            print(f"[SESSION {sid}] Resetting with seed={final_seed}")
+            state, info = env_instance.reset(seed=final_seed)
+        else:
+            state, info = env_instance.reset()
         
         return {"state": state, "info": info, "session_id": sid}
     except Exception as e:
@@ -126,3 +156,34 @@ def get_tools():
         return {"tools": tools}
     except Exception as e:
         return {"error": f"Failed to get tools: {str(e)}", "tools": []}
+
+@app.get("/debug/scene")
+def get_scene_debug(x_session_id: str = Header(...)):
+    """Debug endpoint: Get raw obstacle and target positions from PyBullet."""
+    try:
+        if x_session_id not in environments:
+            return {"error": "Session not found"}
+        
+        env_instance = environments[x_session_id]
+        
+        # Get obstacle positions directly from scene_manager
+        import pybullet as p
+        
+        obstacle_positions = []
+        for obs_id in env_instance.scene_manager.obstacle_ids:
+            pos, _ = p.getBasePositionAndOrientation(obs_id, physicsClientId=env_instance.env.CLIENT)
+            obstacle_positions.append(list(pos))
+        
+        target_positions = []
+        for tgt_id in env_instance.scene_manager.target_ids:
+            pos, _ = p.getBasePositionAndOrientation(tgt_id, physicsClientId=env_instance.env.CLIENT)
+            target_positions.append(list(pos))
+        
+        return {
+            "obstacles": obstacle_positions,
+            "targets": target_positions,
+            "obstacle_count": len(obstacle_positions),
+            "target_count": len(target_positions)
+        }
+    except Exception as e:
+        return {"error": f"Failed to get scene: {str(e)}"}

@@ -77,16 +77,24 @@ class SceneManager:
         for pos in target_positions:
             self.create_colored_target(pos)
 
-    def randomize_scene_task1(self, num_obstacles=None):
+    def randomize_scene_task1(self, num_obstacles=None, rng=None):
         """
         Randomize scene for Task 1: Navigate & Reach
         - 1 target in one of 5 zones
         - 2-5 obstacles strategically placed to block direct path
+        
+        Args:
+            num_obstacles: Number of obstacles to place
+            rng: numpy RandomState for deterministic generation (thread-safe)
         """
         self.clear_scene()
         
+        # Use provided RNG or default to np.random
+        if rng is None:
+            rng = np.random
+        
         if num_obstacles is None:
-            num_obstacles = np.random.randint(2, 6)  # 2-5 obstacles
+            num_obstacles = rng.randint(2, 6)  # 2-5 obstacles
         
         # ── 1. Place target ──────────────────────────────────────────
         target_zones = [
@@ -96,7 +104,7 @@ class SceneManager:
             np.array([-5.0, 5.0, 1.0]),
             np.array([3.0, 7.0, 1.0]),
         ]
-        target_pos = target_zones[np.random.randint(0, len(target_zones))]
+        target_pos = target_zones[rng.randint(0, len(target_zones))]
         self.create_colored_target(target_pos.tolist())
         
         # ── 2. Compute path geometry ─────────────────────────────────
@@ -130,20 +138,20 @@ class SceneManager:
             seg_min, seg_max = segment_ranges[i % len(segment_ranges)]
             
             # Random position along path within segment
-            t = np.random.uniform(seg_min, seg_max)
+            t = rng.uniform(seg_min, seg_max)
             base_pos = spawn + path_dir * path_length * t
             
             # RANDOMIZED lateral offset - varies per obstacle
             # 40% chance: fully blocked (0.0-0.3m)
             # 40% chance: partially blocked (0.5-1.2m)
             # 20% chance: open path (1.5-2.5m)
-            rand_val = np.random.random()
+            rand_val = rng.random()
             if rand_val < 0.4:
-                lateral_magnitude = np.random.uniform(0.0, 0.3)  # Centerline block
+                lateral_magnitude = rng.uniform(0.0, 0.3)  # Centerline block
             elif rand_val < 0.8:
-                lateral_magnitude = np.random.uniform(0.5, 1.2)  # Partial block
+                lateral_magnitude = rng.uniform(0.5, 1.2)  # Partial block
             else:
-                lateral_magnitude = np.random.uniform(1.5, 2.5)  # Open path
+                lateral_magnitude = rng.uniform(1.5, 2.5)  # Open path
             
             lateral_sign = 1 if i % 2 == 0 else -1
             lateral_offset = perp_dir * lateral_sign * lateral_magnitude
@@ -184,9 +192,9 @@ class SceneManager:
         
         # ── 5. Optional: Add one flanking obstacle near target ───────
         # Forces final approach planning with lateral maneuver
-        if len(placed_positions) >= 2 and np.random.random() > 0.4:
-            flank_side = np.random.choice([-1, 1])
-            flank_pos = target_pos + perp_dir * flank_side * np.random.uniform(0.5, 1.0)  # Closer to target
+        if len(placed_positions) >= 2 and rng.random() > 0.4:
+            flank_side = rng.choice([-1, 1])
+            flank_pos = target_pos + perp_dir * flank_side * rng.uniform(0.5, 1.0)  # Closer to target
             flank_pos[2] = 1.0  # Fixed at flight altitude
             
             # Only place if not too close to target and other obstacles
@@ -201,17 +209,25 @@ class SceneManager:
             if valid_flank:
                 self.create_colored_obstacle(flank_pos.tolist())
 
-    def randomize_scene_task2(self, num_obstacles=None):
+    def randomize_scene_task2(self, num_obstacles=None, rng=None):
         """
         Randomize scene for Task 2: Constrained Delivery
         - 1 target (landing zone)
         - 3-5 obstacles with tighter placement (higher battery cost)
         - Similar to Task 1 but obstacles closer to path
+        
+        Args:
+            num_obstacles: Number of obstacles to place
+            rng: numpy RandomState for deterministic generation (thread-safe)
         """
         self.clear_scene()
         
+        # Use provided RNG or default to np.random
+        if rng is None:
+            rng = np.random
+        
         if num_obstacles is None:
-            num_obstacles = np.random.randint(3, 6)  # 3-5 obstacles
+            num_obstacles = rng.randint(3, 6)  # 3-5 obstacles
         
         # ── 1. Place target ──────────────────────────────────────────
         target_zones = [
@@ -221,7 +237,7 @@ class SceneManager:
             np.array([-5.0, 5.0, 1.0]),
             np.array([3.0, 7.0, 1.0]),
         ]
-        target_pos = target_zones[np.random.randint(0, len(target_zones))]
+        target_pos = target_zones[rng.randint(0, len(target_zones))]
         self.create_colored_target(target_pos.tolist())
         
         # ── 2. Compute path geometry ─────────────────────────────────
@@ -249,20 +265,20 @@ class SceneManager:
                 break
             
             seg_min, seg_max = segment_ranges[i % len(segment_ranges)]
-            t = np.random.uniform(seg_min, seg_max)
+            t = rng.uniform(seg_min, seg_max)
             base_pos = spawn + path_dir * path_length * t
             
             # RANDOMIZED lateral offset for Task 2
             # 50% chance: fully blocked (0.0-0.2m) - higher battery cost
             # 30% chance: partially blocked (0.4-1.0m)
             # 20% chance: open path (1.2-2.0m)
-            rand_val = np.random.random()
+            rand_val = rng.random()
             if rand_val < 0.5:
-                lateral_magnitude = np.random.uniform(0.0, 0.2)  # Tight block
+                lateral_magnitude = rng.uniform(0.0, 0.2)  # Tight block
             elif rand_val < 0.8:
-                lateral_magnitude = np.random.uniform(0.4, 1.0)  # Partial block
+                lateral_magnitude = rng.uniform(0.4, 1.0)  # Partial block
             else:
-                lateral_magnitude = np.random.uniform(1.2, 2.0)  # Open path
+                lateral_magnitude = rng.uniform(1.2, 2.0)  # Open path
             
             lateral_sign = 1 if i % 2 == 0 else -1
             lateral_offset = perp_dir * lateral_sign * lateral_magnitude
@@ -299,7 +315,7 @@ class SceneManager:
         # Add midpoint obstacle to increase detour cost
         if len(placed_positions) >= 2:
             mid_pos = spawn + path_dir * path_length * 0.5
-            mid_pos += perp_dir * np.random.choice([-1, 1]) * np.random.uniform(0.5, 1.0)
+            mid_pos += perp_dir * rng.choice([-1, 1]) * rng.uniform(0.5, 1.0)
             mid_pos[2] = 1.0  # Fixed at flight altitude
             
             valid_mid = True
@@ -311,18 +327,27 @@ class SceneManager:
             if valid_mid:
                 self.create_colored_obstacle(mid_pos.tolist())
 
-    def randomize_scene_task3(self, num_obstacles=None, num_targets=None):
+    def randomize_scene_task3(self, num_obstacles=None, num_targets=None, rng=None):
         """
         Randomize scene for Task 3: Two-Drone Coordination
         - 2-3 targets
         - 4-6 obstacles distributed across paths to each target
+        
+        Args:
+            num_obstacles: Number of obstacles to place
+            num_targets: Number of targets to place
+            rng: numpy RandomState for deterministic generation (thread-safe)
         """
         self.clear_scene()
         
+        # Use provided RNG or default to np.random
+        if rng is None:
+            rng = np.random
+        
         if num_obstacles is None:
-            num_obstacles = np.random.randint(4, 7)  # 4-6 obstacles
+            num_obstacles = rng.randint(4, 7)  # 4-6 obstacles
         if num_targets is None:
-            num_targets = np.random.randint(2, 4)  # 2-3 targets
+            num_targets = rng.randint(2, 4)  # 2-3 targets
         
         # ── 1. Place multiple targets ────────────────────────────────
         target_zones = [
@@ -332,7 +357,7 @@ class SceneManager:
             np.array([-5.0, 0.0, 1.0]),
             np.array([0.0, -5.0, 1.0])
         ]
-        selected_indices = np.random.choice(len(target_zones), num_targets, replace=False)
+        selected_indices = rng.choice(len(target_zones), num_targets, replace=False)
         target_positions = [target_zones[idx] for idx in selected_indices]
         
         for target_pos in target_positions:
@@ -363,20 +388,20 @@ class SceneManager:
                 
                 while attempts < max_attempts:
                     # Position along path
-                    t = np.random.uniform(0.3, 0.7)
+                    t = rng.uniform(0.3, 0.7)
                     base_pos = spawn + path_dir * path_length * t
                     
                     # RANDOMIZED lateral offset for Task 3
                     # 35% chance: fully blocked (0.0-0.3m)
                     # 40% chance: partially blocked (0.5-1.2m)
                     # 25% chance: open path (1.5-2.5m)
-                    rand_val = np.random.random()
+                    rand_val = rng.random()
                     if rand_val < 0.35:
-                        lateral_magnitude = np.random.uniform(0.0, 0.3)
+                        lateral_magnitude = rng.uniform(0.0, 0.3)
                     elif rand_val < 0.75:
-                        lateral_magnitude = np.random.uniform(0.5, 1.2)
+                        lateral_magnitude = rng.uniform(0.5, 1.2)
                     else:
-                        lateral_magnitude = np.random.uniform(1.5, 2.5)
+                        lateral_magnitude = rng.uniform(1.5, 2.5)
                     
                     lateral_sign = 1 if i % 2 == 0 else -1
                     lateral_offset = perp_dir * lateral_sign * lateral_magnitude
