@@ -409,6 +409,17 @@ class EDITHDroneEnv:
         except Exception as e:
             return {"error": f"Failed to get state: {str(e)}"}
 
+    # ==========================================
+    # ADD THIS NEW METHOD AT THE END OF THE CLASS
+    # ==========================================
+    def close(self):
+        """Safely close the pybullet environment and free RAM."""
+        try:
+            if hasattr(self, 'env'):
+                self.env.close()
+        except Exception as e:
+            print(f"Error closing environment: {e}")
+
     def _sanitize(self, obj):
         """Recursively convert all numpy types to Python native types."""
         import numpy as np
