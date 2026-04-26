@@ -188,21 +188,45 @@ class EDITHDroneEnv:
 
             # --- Run physics steps ---
             physics_steps = 240
-            for _ in range(physics_steps):
+            collision_detected = False
+            
+            for step_i in range(physics_steps):
                 pid_action = np.zeros((self.num_drones, 3))
                 for i in range(self.num_drones):
                     pid_action[i] = self.target_positions[i]
-                if _ == 0:
+                
+                if step_i == 0:
+                    # Log initial position
+                    initial_pos = self.env._getDroneStateVector(0)[0:3]
                     print(f"[DEBUG] PID action for step: {pid_action}")
+                    print(f"[DEBUG] Drone position BEFORE physics: {initial_pos}")
+                
                 self.env.step(pid_action)
-
-                # Collision check during flight
+                
+                # Check for collisions using PyBullet contact points
                 for i in range(self.num_drones):
+                    drone_body_id = self.env.DRONE_IDS[i]
+                    contacts = p.getContactPoints(bodyA=drone_body_id, physicsClientId=self.env.CLIENT)
+                    
+                    if contacts:
+                        collision_detected = True
+                        if "collision" not in deviations:
+                            deviations.append("collision")
+                            print(f"[DEBUG] Collision detected for drone {i} at physics step {step_i}")
+                    
+                    # Also check ground crash
                     drone_pos = self.env._getDroneStateVector(i)[0:3]
                     if drone_pos[2] < 0.05:
                         self.episode_tracker.record_collision(i)
                         if "collision" not in deviations:
                             deviations.append("collision")
+                
+                if step_i == physics_steps - 1:
+                    # Log final position
+                    final_pos = self.env._getDroneStateVector(0)[0:3]
+                    print(f"[DEBUG] Drone position AFTER physics: {final_pos}")
+                    distance_moved = np.linalg.norm(final_pos - initial_pos)
+                    print(f"[DEBUG] Distance moved: {distance_moved:.3f}m")
 
             # --- Compute current distance to nearest target ---
             current_distance = float('inf')
