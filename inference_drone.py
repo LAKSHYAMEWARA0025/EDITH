@@ -63,7 +63,10 @@ DECISION FRAMEWORK — follow this priority each step:
 2. Know where target is → call move_drone_to with coordinates toward target
 3. Near obstacle → call get_obstacle_distances then reroute
 4. Think you are close → call get_drone_status to verify position
-5. Target reached → call return_drone_home ONCE, then get_drone_status to monitor
+5. Target reached → call return_drone_home ONCE only
+   Then call get_drone_status ONCE to check position
+   If distance to [0, 0, 0.1] is less than 0.5m — you are home, STOP
+   Do not call get_drone_status repeatedly while returning
 
 MOVEMENT RULES:
 - Move in steps of 2-4 meters at a time, not 10+ meters
@@ -76,6 +79,8 @@ STRICT TOOL RULES (violations are penalized):
 - NEVER call the same tool with identical arguments twice in a row
 - return_drone_home: call ONCE only. Then switch to get_drone_status to monitor.
 - move_drone_to: call ONCE per waypoint. Check position before issuing next waypoint.
+- get_drone_status: call ONCE to check position, then act on what you learned
+  Do not call it repeatedly without taking a movement action in between
 - Do not scan repeatedly without moving in between.
 
 EXAMPLES OF GOOD SEQUENCES:
