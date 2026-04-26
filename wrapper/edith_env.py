@@ -115,6 +115,10 @@ class EDITHDroneEnv:
             self.episode_tracker.start_time = time.time()
             self.episode_tracker.time_limit = config["time_limit"]
             
+            # Debug logging
+            print(f"[DEBUG] Reset complete: {len(self.scene_manager.target_ids)} targets spawned")
+            print(f"[DEBUG] Episode tracker total_targets: {self.episode_tracker.total_targets}")
+            
             return self.state(), {}
             
         except Exception as e:

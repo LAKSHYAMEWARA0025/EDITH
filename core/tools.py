@@ -329,9 +329,18 @@ def get_mission_status(env):
             })
         
         # Check if mission complete (convert to Python bool)
-        mission_complete = bool((targets_reached >= total_targets) and all(
-            d["status"] != "crashed" for d in drones
-        ))
+        # Guard: mission cannot be complete if no targets exist or none reached
+        if total_targets == 0:
+            mission_complete = False
+        else:
+            mission_complete = bool(
+                targets_reached >= total_targets and 
+                targets_reached > 0 and  # must have actually reached something
+                all(d["status"] != "crashed" for d in drones)
+            )
+        
+        # Debug logging
+        print(f"[DEBUG] Mission status: total={total_targets}, reached={targets_reached}, complete={mission_complete}")
         
         return {
             "time_remaining": float(time_remaining),

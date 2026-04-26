@@ -138,6 +138,10 @@ def log_step(step: int, tool: str, result: Dict[Any, Any], reward: float, done: 
         else:
             print(f"          └─ No detections")
     
+    # Show mission status
+    if tool == "get_mission_status" and not error:
+        print(f"          └─ Targets: {result.get('targets_reached', 0)}/{result.get('total_targets', 0)} | Complete: {result.get('mission_complete', False)}")
+    
     if error:
         print(f"          Error: {error}")
 
@@ -222,7 +226,8 @@ def run_episode(client: OpenAI, task: str, server_url: str, debug: bool = False)
         print(f"[INFO] Initial state:")
         print(f"       Mission: {state['mission_status']['total_targets']} targets")
         print(f"       Time limit: {state['mission_status']['time_remaining']:.1f}s")
-        print(f"       Drone position: {state['drones']['0']['position']}\n")
+        print(f"       Drone position: {state['drones']['0']['position']}")
+        print(f"[DEBUG] Mission complete at reset: {state['mission_status']['mission_complete']}\n")
         
         # Initialize conversation
         messages = [
