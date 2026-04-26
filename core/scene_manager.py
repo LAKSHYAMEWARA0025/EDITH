@@ -44,15 +44,11 @@ class SceneManager:
         return obs_id
 
     def create_colored_target(self, position, size=None):
-        """Create green target cube at specified position."""
+        """Create green target cube at specified position (NO COLLISION - visual only)."""
         if size is None:
             size = self.TARGET_SIZE
         
-        col_id = p.createCollisionShape(
-            p.GEOM_BOX, 
-            halfExtents=[size, size, size], 
-            physicsClientId=self.client_id
-        )
+        # Visual shape only - NO collision shape
         vis_id = p.createVisualShape(
             p.GEOM_BOX, 
             halfExtents=[size, size, size], 
@@ -61,7 +57,7 @@ class SceneManager:
         )
         tgt_id = p.createMultiBody(
             baseMass=0, 
-            baseCollisionShapeIndex=col_id, 
+            baseCollisionShapeIndex=-1,  # -1 = no collision
             baseVisualShapeIndex=vis_id, 
             basePosition=position, 
             physicsClientId=self.client_id

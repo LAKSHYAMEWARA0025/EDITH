@@ -189,6 +189,7 @@ class EDITHDroneEnv:
             # --- Run physics steps ---
             physics_steps = 240
             collision_detected = False
+            crashed = False
             
             for step_i in range(physics_steps):
                 pid_action = np.zeros((self.num_drones, 3))
@@ -208,15 +209,19 @@ class EDITHDroneEnv:
                     drone_body_id = self.env.DRONE_IDS[i]
                     contacts = p.getContactPoints(bodyA=drone_body_id, physicsClientId=self.env.CLIENT)
                     
-                    if contacts:
+                    # Filter out target collisions (targets have no collision geometry now)
+                    obstacle_contacts = [c for c in contacts if c[2] not in self.scene_manager.target_ids]
+                    
+                    if obstacle_contacts:
                         collision_detected = True
                         if "collision" not in deviations:
                             deviations.append("collision")
                             print(f"[DEBUG] Collision detected for drone {i} at physics step {step_i}")
                     
-                    # Also check ground crash
+                    # Check if crashed (on ground and not moving)
                     drone_pos = self.env._getDroneStateVector(i)[0:3]
-                    if drone_pos[2] < 0.05:
+                    if drone_pos[2] < 0.1:
+                        crashed = True
                         self.episode_tracker.record_collision(i)
                         if "collision" not in deviations:
                             deviations.append("collision")
@@ -227,6 +232,10 @@ class EDITHDroneEnv:
                     print(f"[DEBUG] Drone position AFTER physics: {final_pos}")
                     distance_moved = np.linalg.norm(final_pos - initial_pos)
                     print(f"[DEBUG] Distance moved: {distance_moved:.3f}m")
+                    
+                    # Check if crashed and stuck
+                    if crashed and distance_moved < 0.01:
+                        print(f"[DEBUG] Drone CRASHED - terminating episode")
 
             # --- Compute current distance to nearest target ---
             current_distance = float('inf')
@@ -271,7 +280,7 @@ class EDITHDroneEnv:
             if current_distance < 1.5:
                 milestones.append("close_approach")
 
-            # --- Check targets reached ---
+            # --- Check targets reached (distance-based, not collision) ---
             for i in range(self.num_drones):
                 drone_pos = self.env._getDroneStateVector(i)[0:3]
                 for target_idx, target_body_id in enumerate(list(self.scene_manager.target_ids)):
@@ -281,9 +290,36 @@ class EDITHDroneEnv:
                     if distance < 0.5:
                         self.episode_tracker.record_target_reached(target_idx)
                         milestones.append("target_reached")
+                        print(f"[DEBUG] Target {target_idx} reached! Distance: {distance:.3f}m")
                         p.removeBody(target_body_id, physicsClientId=self.env.CLIENT)
                         self.scene_manager.target_ids.remove(target_body_id)
                         break
+            
+            # --- Proximity warning (depth sensor simulation) ---
+            proximity_warning = None
+            for i in range(self.num_drones):
+                drone_pos = self.env._getDroneStateVector(i)[0:3]
+                target_pos = self.target_positions[i]
+                
+                # Raycast from drone to target position
+                ray_result = p.rayTest(drone_pos.tolist(), target_pos.tolist(), 
+                                      physicsClientId=self.env.CLIENT)
+                
+                if ray_result and len(ray_result) > 0:
+                    hit_fraction = ray_result[0][2]
+                    hit_object = ray_result[0][0]
+                    
+                    # Check if obstacle (not target) in path
+                    if hit_object in self.scene_manager.obstacle_ids:
+                        hit_distance = hit_fraction * np.linalg.norm(target_pos - drone_pos)
+                        if hit_distance < 2.0:  # Warning threshold: 2 meters
+                            proximity_warning = {
+                                "obstacle_ahead": True,
+                                "distance": float(hit_distance),
+                                "direction": "forward",
+                                "recommendation": "Reroute: adjust X or Y by ±2m"
+                            }
+                            print(f"[DEBUG] Proximity warning: obstacle {hit_distance:.2f}m ahead")
 
             if tool_name == "return_drone_home" and "error" not in result:
                 if result.get("status") == "command_sent":
@@ -332,6 +368,7 @@ class EDITHDroneEnv:
                 targets_left <= 0 or
                 time_left <= 0 or
                 all_crashed or
+                crashed or  # Immediate termination on crash
                 step_limit
             )
 
@@ -349,7 +386,9 @@ class EDITHDroneEnv:
                 "tool_result": self._sanitize(result),
                 "reward_breakdown": reward_breakdown,
                 "milestones_hit": list(milestones),
-                "deviations": list(deviations)
+                "deviations": list(deviations),
+                "proximity_warning": proximity_warning,  # Depth sensor data
+                "crashed": crashed  # Immediate crash status
             }
 
         except Exception as e:

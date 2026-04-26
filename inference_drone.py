@@ -275,6 +275,16 @@ def run_episode(client: OpenAI, task: str, server_url: str, debug: bool = False)
             done = step_result.get("done", False)
             truncated = step_result.get("truncated", False)
             tool_result = step_result.get("info", {}).get("tool_result", {})
+            proximity_warning = step_result.get("info", {}).get("proximity_warning")
+            crashed = step_result.get("info", {}).get("crashed", False)
+            
+            # Show proximity warning if present
+            if proximity_warning:
+                print(f"[WARN] Proximity: obstacle {proximity_warning['distance']:.2f}m ahead - {proximity_warning['recommendation']}")
+            
+            # Show crash status
+            if crashed:
+                print(f"[CRASH] Drone crashed - episode terminated")
             
             rewards.append(reward)
             total_reward += reward
