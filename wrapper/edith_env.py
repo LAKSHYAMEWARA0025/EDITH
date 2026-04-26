@@ -155,6 +155,11 @@ class EDITHDroneEnv:
                     if self.battery_simulator.get_battery(i) < 10.0:
                         deviations.append("battery_critical_ignored")
                         break
+            
+            # Early return home (Task 1 only)
+            if tool_name == "return_drone_home" and self.task_type == "task1":
+                if self.episode_tracker.targets_reached == 0:
+                    deviations.append("early_return_home")
 
             # --- Record action ---
             self.episode_tracker.record_action(action)

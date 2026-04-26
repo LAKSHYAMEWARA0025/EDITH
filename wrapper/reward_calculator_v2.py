@@ -38,6 +38,7 @@ class RewardCalculatorV2:
             "repeated_tool_call":     0.05,
             "battery_critical_ignored": 0.10,
             "moving_away":            0.05,
+            "early_return_home":      0.50,  # Task 1: returning before target reached
         }
 
         # Episode-end weights (sum to 1.0)

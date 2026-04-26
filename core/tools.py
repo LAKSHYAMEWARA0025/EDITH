@@ -445,6 +445,15 @@ def return_drone_home(env, drone_id):
         is_wrapper = hasattr(env, 'scene_manager')
         inner_env = env.env if is_wrapper else env
         
+        # Task 1 gating: must complete target first
+        if is_wrapper and env.task_type == "task1":
+            if env.episode_tracker.targets_reached == 0:
+                return {
+                    "error": "Cannot return home. Reach the green target first.",
+                    "targets_remaining": env.episode_tracker.total_targets - env.episode_tracker.targets_reached,
+                    "note": "return_drone_home is INVALID until target is reached in Task 1."
+                }
+        
         # Get current position
         state = inner_env._getDroneStateVector(drone_id)
         current_pos = state[0:3]

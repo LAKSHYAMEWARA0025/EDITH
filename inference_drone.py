@@ -83,6 +83,17 @@ STRICT TOOL RULES (violations are penalized):
   Do not call it repeatedly without taking a movement action in between
 - Do not scan repeatedly without moving in between.
 
+TASK 1 SPECIFIC RULE:
+- return_drone_home is INVALID until green target is reached
+- Calling it before target reached will FAIL with error and -0.50 penalty
+- Focus on finding and reaching the target first
+
+BOUNDARY HANDLING:
+- If you receive out_of_bounds penalty, reverse direction ONLY
+- Do NOT call return_drone_home when hitting boundary
+- You are still on mission — reroute and continue searching
+- Boundaries are at X=±8, Y=±8, Z=2.0 (stay within these limits)
+
 EXAMPLES OF GOOD SEQUENCES:
 scan_area → move_drone_to → get_drone_status → move_drone_to → get_drone_status → return_drone_home → get_drone_status
 
