@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  edith-env:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: edith-mission-commander
+    ports:
+      - "8000:8000"
+    environment:
+      - EDITH_GUI=false
+      - EDITH_TASK=task1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/tools"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    # Optional: mount for development
+    # volumes:
+    #   - ./core:/app/core
+    #   - ./wrapper:/app/wrapper
+    #   - ./server:/app/server

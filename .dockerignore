@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Testing
+tests/
+test_*.py
+*.log
+
+# Temporary files
+tmp/
+*.tmp
+.DS_Store
+
+# Environment files
+.env
+.env.local
+
+# Documentation (keep README.md)
+*.md
+!README.md
+
+# Inference scripts (not needed in container)
+inference_drone.py
+test_environment_basic.py
+test_return_home.py
+setup_local.bat
+
+# Backup files
+*.bak
+*.backup
