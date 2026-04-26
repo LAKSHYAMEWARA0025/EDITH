@@ -96,6 +96,69 @@ The environment never warns the agent about obstacles automatically. No data is 
 
 ---
 
+## Vision System: Efficient Perception Pipeline
+
+The `scan_area` tool uses a lightweight OpenCV-based vision pipeline that processes PyBullet's camera output in headless mode. Instead of sending raw pixel data to the LLM (computationally expensive and high latency), the system performs **color-based object detection** and returns structured text the agent can reason about.
+
+### How It Works
+
+1. **Camera Capture (Headless Mode)**  
+   PyBullet's TinyRenderer captures RGB frames in DIRECT mode (no GUI required)
+
+2. **Color Masking**  
+   OpenCV HSV color space filtering detects:
+   - **Red objects** → Obstacles (must avoid)
+   - **Green objects** → Targets (must reach)
+
+3. **Structured Output**  
+   Returns: `{type, distance, direction, altitude}` for each detection
+
+### Visual Pipeline
+
+**Drone Camera Input (Headless Mode):**
+
+![Drone Camera Input](assets/drone%20camera%20input.png)
+
+*Raw RGB frame captured from drone's perspective using PyBullet TinyRenderer in headless mode.*
+
+---
+
+**Obstacle Mask (Red Color Detection):**
+
+![Obstacle Mask](assets/obstacle%20mask.png)
+
+*OpenCV HSV masking isolates red obstacles. Contour detection calculates position and distance.*
+
+---
+
+**Target Mask (Green Color Detection):**
+
+![Target Mask](assets/target%20mask.png)
+
+*OpenCV HSV masking isolates green targets. The agent uses this to verify target proximity.*
+
+---
+
+### Why This Approach?
+
+**Advantages:**
+- **Low latency:** Color masking is ~10ms vs 200ms+ for YOLO
+- **Lightweight:** No 200MB+ model weights
+- **Interpretable:** Agent receives structured data, not raw pixels
+- **Headless-compatible:** Works in Docker without display server
+
+**Scalability:**
+For more complex environments, this pipeline can be extended with:
+- **YOLO** for general object detection
+- **Advanced OpenCV tracking** (KCF, CSRT) for moving obstacles
+- **Depth estimation** from stereo cameras
+- **Semantic segmentation** for scene understanding
+
+**Current Implementation:**  
+Color-based detection is sufficient for the hackathon scope and demonstrates the core concept without adding unnecessary complexity.
+
+---
+
 ## Task Design
 
 Tasks are organized into **3 tiers** with curriculum-based progression. Each task has randomized variants to prevent memorization.
@@ -472,6 +535,12 @@ git push space main
 - **Observations:** Agent learned to stop calling invalid tools, but struggled with tool sequencing
 - **Issue:** Oscillating reward curve, no clear strategy emergence
 
+![Gen 1 Rewards Chart](assets/Gen%201%20Rewards%20Chart.svg)
+
+**Analysis:** The reward curve shows high volatility with frequent oscillations between positive and negative rewards. The agent is exploring randomly without discovering consistent patterns that lead to success. The flat mean reward around 0.05 indicates minimal learning progress.
+
+---
+
 ### Generation 2 (50 episodes, Task 1, loaded Gen 1 weights)
 
 - **Mean reward:** 0.35 / 1.0
@@ -479,10 +548,16 @@ git push space main
 - **Improvement:** Reduced oscillation, upward trend in reward curve
 - **Remaining gap:** Agent would scan but sometimes ignore the data
 
+![Gen 2 Rewards Chart](assets/Gen%202%20Rewards%20Chart.svg)
+
+**Analysis:** Clear improvement over Gen 1. The reward curve shows reduced volatility and an upward trend, especially in the latter half of training. The agent is discovering better tool sequencing patterns. Mean reward increased 7x (0.05 → 0.35), demonstrating that curriculum learning with weight transfer is effective.
+
+---
+
 ### Key Learnings
 
 1. **50 episodes is insufficient** for a 1.5B model learning drone navigation from scratch
-2. **Curriculum learning works** — Gen 2 showed clear improvement over Gen 1
+2. **Curriculum learning works** — Gen 2 showed clear improvement over Gen 1 (7x reward increase)
 3. **Reward shaping is critical** — milestone bonuses provided necessary gradient signal
 4. **More training time needed** to reach Task 1 mastery threshold (0.70) and progress to Task 2/3
 

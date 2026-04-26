@@ -134,6 +134,23 @@ Except the camera wasn't working. No matter where the drone moved, `scan_area` r
 
 We fixed the camera calibration. Now it faced forward.
 
+**How the Vision System Works:**
+
+Instead of sending raw pixel data to the LLM (expensive and slow), we built a lightweight OpenCV pipeline that processes the camera feed and returns structured data:
+
+![Drone Camera Input](assets/drone%20camera%20input.png)
+*What the drone sees in headless mode (PyBullet TinyRenderer)*
+
+![Obstacle Mask](assets/obstacle%20mask.png)
+*Red color masking isolates obstacles*
+
+![Target Mask](assets/target%20mask.png)
+*Green color masking isolates targets*
+
+The system uses HSV color space filtering to detect red obstacles and green targets, then returns `{type, distance, direction}` for each detection. This keeps latency low (~10ms) and gives the agent interpretable data it can reason about.
+
+For more complex environments, this could be extended with YOLO for general object detection or advanced OpenCV tracking for moving obstacles. But for the hackathon scope, color-based detection was sufficient and kept the system lightweight.
+
 ### Challenge 2: Gimbal Lock
 
 Next problem: the agent started hallucinating movement directions.
@@ -251,6 +268,8 @@ The first training run was rough. We gave it 50 episodes to learn from. The rewa
 
 **Easy Task mean reward: ~0.05 out of 1.0**
 
+![Gen 1 Rewards Chart](../EDITH/assets/Gen%201%20Rewards%20Chart.svg)
+
 The agent was learning *something* — it stopped calling completely invalid tools — but it wasn't learning *strategy*. It wasn't connecting "scan before move" with "higher reward."
 
 Here's the thing: 50 episodes isn't much. For a small model like Qwen 1.5B learning drone navigation from scratch, you need *hundreds* of episodes to see enough successful trajectories. The agent needs to stumble into a good outcome by chance a few times before GRPO can recognize the pattern and reinforce it.
@@ -267,11 +286,16 @@ The oscillation reduced. The agent started calling `get_obstacle_distances()` mo
 
 **Easy Task mean reward: ~0.35 out of 1.0**
 
+![Gen 2 Rewards Chart](../EDITH/assets/Gen%202%20Rewards%20Chart.svg)
+
 Still not where we wanted. The agent would scan, then sometimes ignore the data anyway. It'd detect an obstacle to the north and still try to fly north. But the trend was undeniable — it was learning. Tool call patterns were improving. The curve was going up.
+
+The improvement was clear: **7x reward increase** from Gen 1 to Gen 2 (0.05 → 0.35). Curriculum learning with weight transfer was working.
 
 We ran out of time before Gen 3. But we could see exactly where it was heading.
 
 ---
+
 
 ## What We Actually Learned
 
