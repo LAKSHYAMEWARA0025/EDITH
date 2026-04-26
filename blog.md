@@ -68,33 +68,29 @@ We weren't just writing code. We were building a **miniature world where an AI c
 
 We started strong. We had the idea, we had the energy, and we had **PySimverse** — a Python library with a full 3D Unity engine for drone simulation. It looked perfect on paper.
 
-Then the first real problem showed up: we needed to package everything in Docker for submission.
+Then the first real problem showed up: we needed to package everything for deployment.
 
-Here's the thing — PySimverse has two components. One is the Python library that controls the drones. The other is a standalone 3D engine built in Unity that handles the physics and rendering. The engine requires its own dedicated launcher app to run. And that launcher? Only available for Mac and Windows. No Linux version.
+PySimverse looked perfect — a Python library with a 3D simulation engine. But it had a critical flaw: the engine only worked on Mac and Windows. Our deployment needed to run on Linux servers. No workaround existed. It was like trying to run an iPhone app on an Android phone — fundamentally incompatible.
 
-Docker runs on Linux. That's not a configuration issue you can patch around. It's a fundamental incompatibility. We couldn't even attempt to containerize it — the engine simply wouldn't exist in that environment.
+On top of that, the engine needed a screen to display graphics. Server environments don't have screens. And there was another issue: AI models take 1-2 seconds to think. Drones need instant commands. The timing just didn't work.
 
-On top of that, the Unity engine had no headless mode — the GUI had to physically render on screen. Even if we somehow got it running on Linux, inside a Docker container there's no display server. Instant crash.
-
-And even setting all of that aside, there was another problem lurking underneath: LLMs have a 1–2 second response time. Drones need *continuous* commands. By the time the AI finished "thinking," the drone would already be inside a wall.
-
-PySimverse was a dead end. We had burned hours on it, and we had to make a call — cut our losses and find something that actually works.
+We had to pivot. Fast.
 
 ---
 
 ## The Pivot That Saved the Project
 
-We switched to **gym-pybullet-drones** — a research-grade physics engine built specifically for reinforcement learning with drones. It runs headless (no display needed), is natively Linux-compatible, fits perfectly inside Docker, and is lightweight enough to run on limited hardware.
+We switched to **gym-pybullet-drones** — a research-grade physics engine built for AI training. It runs without needing a screen, works on Linux, and is lightweight enough for basic hardware.
 
 That single switch unblocked everything.
 
 But we also had to rethink something more fundamental: **what role should the AI actually play?**
 
-Our original instinct was to make the AI a low-level pilot — sending continuous motor speed commands every few milliseconds. That's too fast, too granular, and honestly not what a language model is good at.
+Our original instinct was to make the AI control every tiny detail — like telling the drone exactly how fast to spin each motor. That's too fast and too detailed for an AI that needs time to think.
 
 So we flipped it. We made the AI a **strategic mission commander** instead.
 
-The AI gets a set of "tools" it can call — high-level actions like:
+The AI doesn't control motors. It makes high-level decisions like:
 
 | Tool | What it does |
 |------|-------------|
@@ -128,99 +124,39 @@ And then the real debugging began.
 
 ### Challenge 1: The Camera That Looked at the Ground
 
-Our initial Task 1 design required the drone to *find* the target itself using the `scan_area` tool. The agent would call the tool, the camera would capture the scene, and OpenCV would detect the target marker.
+The drone had a camera to detect obstacles and targets. But it wasn't working. The camera was pointing straight down at the ground instead of forward. We fixed the angle, and suddenly the drone could "see" what was ahead.
 
-Except the camera wasn't working. No matter where the drone moved, `scan_area` returned nothing. We dug into the PyBullet camera setup and found the issue — the camera was facing straight down, perpendicular to the ground, locked in place. The drone was flying around scanning dirt.
+### Challenge 2: Confused Directions
 
-We fixed the camera calibration. Now it faced forward.
+The drone kept moving in the wrong direction. If the target was north, it would fly east. The problem was how the drone understood directions — its internal compass was getting confused. We gave it a fixed reference system so it always knew which way was which.
 
-**How the Vision System Works:**
+### Challenge 3: The Wandering Drone
 
-Instead of sending raw pixel data to the LLM (expensive and slow), we built a lightweight OpenCV pipeline that processes the camera feed and returns structured data:
+The drone kept flying farther and farther away, searching for the target. We set boundaries — invisible walls the drone couldn't cross. This forced it to search smarter, not just wander endlessly.
 
-![Drone Camera Input](assets/drone%20camera%20input.png)
-*What the drone sees in headless mode (PyBullet TinyRenderer)*
+### Challenge 4: The Task Was Too Hard
 
-![Obstacle Mask](assets/obstacle%20mask.png)
-*Red color masking isolates obstacles*
+Even a powerful AI model struggled. Why? Because AI models are trained on text, code, and conversations — not flying drones. They don't naturally know "scan before you move" or "check your battery."
 
-![Target Mask](assets/target%20mask.png)
-*Green color masking isolates targets*
+We realized we needed to teach the AI step by step.
 
-The system uses HSV color space filtering to detect red obstacles and green targets, then returns `{type, distance, direction}` for each detection. This keeps latency low (~10ms) and gives the agent interpretable data it can reason about.
+### Making Learning Possible
 
-For more complex environments, this could be extended with YOLO for general object detection or advanced OpenCV tracking for moving obstacles. But for the hackathon scope, color-based detection was sufficient and kept the system lightweight.
+We redesigned how the AI learns. Instead of only getting feedback at the very end (success or failure), we gave it feedback at every step:
 
-### Challenge 2: Gimbal Lock
+- Moving closer to the target? Small reward.
+- Hitting an obstacle? Penalty.
+- Scanning before moving? Bonus points.
 
-Next problem: the agent started hallucinating movement directions.
+This way, the AI could learn from every action, not just the final outcome.
 
-If the target was straight ahead along the Y-axis, the drone would move along the X-axis thinking it was going "forward." This is a classic issue called **gimbal lock** — when a 3D rotation system loses a degree of freedom because two axes align. In our case, the drone's internal orientation representation was hitting singularities, causing the coordinate frame to flip unpredictably.
+We also simplified the first task. Instead of making the drone search for the target, we told it where the target was. The challenge became: "Can you navigate there without crashing?" Once it learns that, we can add more complexity.
 
-The fix: we explicitly provided the drone with a fixed world coordinate system in the observation. Now the agent knew exactly which axis was which, regardless of the drone's orientation.
+### The Obstacle Problem
 
-### Challenge 3: The Infinite Search
+At first, obstacles were placed randomly. Sometimes they blocked the path, sometimes they didn't. The AI couldn't learn a consistent strategy.
 
-With the camera working and coordinates fixed, the agent started moving. And moving. And moving away from the target.
-
-The world was large. The agent had to search for the target. But it kept drifting farther and farther out, convinced the target must be "just a bit farther." We added a penalty for moving away from the target zone. The agent ignored it and kept searching.
-
-The real fix: we set hard boundary limits. The agent had to search within a defined region. Cross the boundary, instant penalty. The agent learned to stay inside.
-
-### Challenge 4: The Task Was Just Too Hard
-
-Even after fixing all of that, we hit a wall. The agent still couldn't complete the mission consistently.
-
-Here's the thing: LLMs are trained on code, chat, reasoning, problem-solving — not drone flight control. Even a 72B model doesn't have an intuition for "scan before you move" or "check your distance to the obstacle." That's not in its training data.
-
-We realized we were asking too much too soon.
-
-### The Reward System Overhaul
-
-We went back and redesigned the reward function from scratch. The original was too sparse — the agent got almost no signal until the very end of the episode. If it crashed halfway through, it learned nothing about what went wrong.
-
-We built a **two-layer hybrid reward system**:
-
-**Layer 1 — Per-Step Rewards:**  
-Every single step, the agent gets feedback. Not for calling the "right" tool, but for making *progress*.
-
-- **Distance signal:** Moving closer to the target? Small positive reward. Moving away? Small negative.
-- **Milestone bonuses:** First scan completed? +0.05. Target located? +0.05. Halfway there? +0.10. These fire *once* per episode when thresholds are crossed — no farming allowed.
-- **Deviation penalties:** Collision? -0.20. Repeated tool call? -0.05. Battery critical and you're still flying away from home? -0.10.
-
-The agent always has gradient. There's no dead zone where it gets zero signal and learns nothing.
-
-**Layer 2 — Episode-End Rewards:**  
-At the end, a comprehensive score based on four components:
-
-- **Mission completion (40%):** Did you reach the targets?
-- **Safety (30%):** How many collisions?
-- **Efficiency (20%):** How fast did you complete it?
-- **Battery (10%):** How much power did you conserve?
-
-The two layers combine into a final normalized score between -1.0 and +1.0. A perfect episode scores near +1.0. An episode where the agent loops doing nothing scores near -0.5. GRPO gets clear, graded signal to learn from.
-
-This structure solved the sparse reward problem. Now the agent could learn incrementally — every step taught it something.
-
-### Simplifying Task 1
-
-We made one more critical change: we gave the agent the target coordinates upfront.
-
-This sounds like cheating, but it's not. The goal of Task 1 isn't "find the target" — it's "learn to navigate to a known point while avoiding obstacles." The agent needs to learn tool sequencing, spatial reasoning, and obstacle avoidance *first*. Once it masters that, we can add the complexity of searching.
-
-Now the agent knew where to go. The challenge was getting there without crashing.
-
-### The Obstacle Placement Problem
-
-The agent started reaching the target. Great. Except now it was *too easy* — it would just call `move_drone_to(target)` and fly straight there in one step.
-
-The problem: our obstacle randomizer was scattering boxes randomly across the scene. Sometimes they blocked the path. Often they didn't. There was no logical structure.
-
-We rewrote the placement algorithm. Now obstacles are placed with intentional offsets along the path between the drone and the target. We increased their height. We added clustering. The obstacles still randomize every episode, but now they *guard* the path. The agent can't just fly straight through. It has to stop, scan, think, and route around.
-
-Now the LLM was sometimes reaching the target — if the path was simple. Otherwise, it crashed into obstacles or the ground.
-
-But that was the point. During training, the agent would see thousands of episodes. It would learn that the episodes where it crashed had one thing in common: it didn't call `get_obstacle_distances()` before moving. Over time, it would learn to scan first.
+We changed the algorithm to place obstacles intentionally along the path to the target. Now every episode was challenging, and the AI had to learn to scan, detect obstacles, and find alternate routes.
 
 That's how RL works. You don't tell the agent what to do. You let it fail, and the reward signal teaches it what worked and what didn't.
 
@@ -232,33 +168,19 @@ We designed a curriculum — the same principle behind how humans learn: master 
 
 **Task 1 — Easy:** Single drone, static obstacles, simple navigation. Get from A to B without crashing.
 
-**Task 2 — Medium:** Add battery pressure. Add moving obstacles. Add mid-mission events that force replanning.
+**Task 2 — Medium:** Add battery management and moving obstacles.
 
-**Task 3 — Hard:** Two-drone coordination. Resource allocation. Swarm strategy.
+**Task 3 — Hard:** Two drones working together as a team.
 
-### Why Curriculum Learning?
+### How We Trained the AI
 
-Each task is like a level in a game. The agent *must* learn Task 1 before it can handle Task 2. If we trained on all three tasks at once, here's what would happen:
+We used a step-by-step approach called "curriculum learning" — like how you learn math by starting with addition before moving to calculus.
 
-- Task 1 might pass
-- Task 2 performs terribly
-- Now we have to retrain from scratch — we can't isolate which task broke
+First, we trained the AI on the easiest task until it got good at it. Then we saved what it learned and used that as a starting point for the next, harder task. This way, the AI builds on what it already knows instead of starting from scratch each time.
 
-With curriculum learning, we train Task 1 until the agent crosses a reward threshold (say, 0.70 mean reward over 50 episodes). Then we save the weights.
+Think of it like learning to drive: first you practice in an empty parking lot, then on quiet streets, then on highways. Each step builds on the previous one.
 
-For Task 2, we *load* those Task 1 weights as the starting point. The model already knows how to navigate and avoid obstacles. Now it just needs to learn battery management and dynamic obstacle timing. The weights saved after Task 2 training contain learnings from *both* Task 1 and Task 2.
-
-Same for Task 3 — load Task 2 weights, train on swarm coordination, save the final model.
-
-This gives us two huge advantages:
-
-1. **Validation per task** — We can test each task in isolation on a held-out scene. If Task 1 generalizes but Task 2 doesn't, we know exactly where the problem is.
-
-2. **Extensibility** — Want to add Task 4 later? Just load the Task 3 weights and train on the new task. The model carries all previous learnings forward.
-
-The method: train on Task 1 until the agent hits a reward threshold, save the model weights, then use those weights as the starting point for Task 2. Each generation builds on the last — like a student who already knows the basics before tackling the hard exam.
-
-We deployed to Colab with our compute credits and started training.
+We deployed our training on Google Colab with computing credits from the hackathon and started the training process.
 
 ---
 
@@ -268,9 +190,7 @@ The first training run was rough. We gave it 50 episodes to learn from. The rewa
 
 **Easy Task mean reward: ~0.05 out of 1.0**
 
-![Gen 1 Rewards Chart](../EDITH/assets/Gen%201%20Rewards%20Chart.svg)
-
-The agent was learning *something* — it stopped calling completely invalid tools — but it wasn't learning *strategy*. It wasn't connecting "scan before move" with "higher reward."
+The agent was learning *something* — it stopped calling completely invalid tools — but it wasn't learning *strategy*. It wasn't connecting "scan before you move" with "higher reward."
 
 Here's the thing: 50 episodes isn't much. For a small model like Qwen 1.5B learning drone navigation from scratch, you need *hundreds* of episodes to see enough successful trajectories. The agent needs to stumble into a good outcome by chance a few times before GRPO can recognize the pattern and reinforce it.
 
@@ -286,11 +206,9 @@ The oscillation reduced. The agent started calling `get_obstacle_distances()` mo
 
 **Easy Task mean reward: ~0.35 out of 1.0**
 
-![Gen 2 Rewards Chart](../EDITH/assets/Gen%202%20Rewards%20Chart.svg)
-
 Still not where we wanted. The agent would scan, then sometimes ignore the data anyway. It'd detect an obstacle to the north and still try to fly north. But the trend was undeniable — it was learning. Tool call patterns were improving. The curve was going up.
 
-The improvement was clear: **7x reward increase** from Gen 1 to Gen 2 (0.05 → 0.35). Curriculum learning with weight transfer was working.
+The improvement was clear: **7x reward increase** from Gen 1 to Gen 2 (0.05 → 0.35). The AI was getting better at understanding how to navigate.
 
 We ran out of time before Gen 3. But we could see exactly where it was heading.
 
@@ -299,46 +217,48 @@ We ran out of time before Gen 3. But we could see exactly where it was heading.
 
 ## What We Actually Learned
 
-### 1. Always check library compatibility before you fall in love with it
-PySimverse looked like the perfect tool — until we tried to run it on Linux inside Docker. The incompatibility wasn't subtle; it was architectural. Always validate against your deployment environment before you invest hours building on top of something.
+### 1. Test your tools early
+PySimverse looked perfect on paper. But it couldn't run on the servers we needed. Always test compatibility before building your entire project around a tool.
 
-### 2. Drone control is genuinely hard for AI
-Even a "simple" navigation task requires spatial reasoning, tool sequencing, and multi-step planning. An untrained model has none of this. Every piece has to be learned from scratch — don't underestimate the task just because the concept sounds simple.
+### 2. AI doesn't naturally know how to fly drones
+Even powerful AI models struggle with drone navigation because they're trained on text and code, not physical movement. Teaching an AI to fly requires starting from scratch with lots of practice.
 
-### 3. Reward shaping is everything
-Our first reward function was too sparse — the agent got almost no signal until the very end of the episode. Adding milestone bonuses for intermediate good behavior was what made training actually converge. If you don't reward the *steps*, the model can't find its way to the *outcome*.
+### 3. Give feedback at every step
+Our first attempt only told the AI "success" or "failure" at the end. That's not enough. We changed it to give small rewards or penalties after every action. This helped the AI learn much faster.
 
-### 4. Curriculum learning works — but needs time
-The improvement between Gen 1 and Gen 2 using the same weights was real and measurable. The method works. RL training is just slow. We needed more compute time to see the full curriculum play out.
+### 4. Start simple, then add complexity
+We tried to make the AI do everything at once and it failed. When we broke it into smaller steps (first learn to navigate, then add battery management, then add multiple drones), it started working.
 
-### 5. Headless simulation is non-negotiable
-PyBullet's DIRECT mode (no GUI, no display server, pure physics) was the only reason we could deploy and train at all. If a simulation requires a screen to run, it can't scale. Lesson learned the hard way, but learned well.
+### 5. Simulation without graphics is essential
+We needed the drone simulation to run on servers without screens. PyBullet's headless mode made this possible. Without it, we couldn't have trained or deployed anything.
 
-### 6. The gap between "works in theory" and "works in practice" is enormous
-We spent more time debugging environment edge cases — stuck drones, battery drain bugs, collision detection glitches — than we did on the RL algorithm itself. That's almost always how it goes.
+### 6. Building is harder than planning
+We spent more time fixing bugs and edge cases than writing the actual AI code. That's normal in real projects — the unexpected problems take the most time.
 
 ---
 
 ## What Comes Next
 
-If we had more time and compute, here's exactly what we'd do:
+If we had more time and computing power, here's what we'd do:
 
-- **Train Gen 3+** until the agent masters Task 1 (target: 0.70+ mean reward)
-- **Move to Task 2** — add battery pressure and moving obstacles
-- **Scale to Task 3** — two-drone coordination and swarm strategy
-- **Test generalization** on a held-out scene the agent has never seen before
+- **Continue training** until the AI consistently completes the basic navigation task
+- **Add harder challenges** like limited battery and moving obstacles
+- **Train multiple drones** to work together as a team
+- **Test on new scenarios** the AI has never seen before to prove it really learned, not just memorized
 
-The architecture works. The environment is solid. The agent is learning. We just need more training time to see it fully click.
+The foundation is built. The AI is learning. We just need more time to see it reach its full potential.
 
 ---
 
-## Why Any of This Matters
+## Why This Matters
 
-Drone swarms today run on pre-programmed scripts. They work well — until something unexpected happens. A drone loses battery. An obstacle moves. The mission priority changes mid-flight. Scripts can't adapt to that.
+Today's drone swarms follow pre-programmed instructions. They work great — until something unexpected happens. A drone runs out of battery. An obstacle appears. The mission changes mid-flight. Scripts can't handle that.
 
-What we're building trains the gap between rigid automation and genuine adaptive intelligence. The goal is drones that can *reason*, replan in real-time, and coordinate under uncertainty.
+We're building something different: drones that can think, adapt, and make decisions in real-time. Drones that can handle the unexpected.
 
-We didn't reach the finish line in 24 hours. But we got close enough to see what's possible — and more importantly, to build the foundation to get there.
+This has real applications: disaster response, search and rescue, infrastructure inspection, delivery systems. Anywhere you need drones to operate in unpredictable environments.
+
+We didn't finish everything in 24 hours. But we proved the concept works and built the foundation to take it further.
 
 ---
 

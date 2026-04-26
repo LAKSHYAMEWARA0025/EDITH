@@ -629,6 +629,7 @@ If we had more compute time:
 ### Project Links
 - **Environment:** https://huggingface.co/spaces/Invictus-Jai/edith-mission-commander
 - **Training Code:** https://colab.research.google.com/drive/1YEFLDpLOA14hsdkyqs4fQMd3qK-Pbnmt
+- **Blog Post:** https://huggingface.co/spaces/Invictus-Jai/edith-mission-commander/blob/main/blog.md
 
 ### Dependencies & Resources
 - **gym-pybullet-drones (GPD):** https://github.com/utiasDSL/gym-pybullet-drones.git
