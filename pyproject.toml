@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openenv-edith"
+version = "1.0.0"
+description = "EDITH Mission Commander - Drone navigation environment for OpenEnv"
+requires-python = ">=3.10"
+dependencies = [
+    "openenv-core[core]>=0.2.2",
+    "gymnasium>=0.29.0",
+    "numpy>=1.24.0",
+    "Pillow>=10.0.0",
+    "opencv-python>=4.8.0",
+    "fastapi>=0.104.0",
+    "uvicorn>=0.24.0",
+    "pydantic>=2.0.0",
+    "matplotlib>=3.7.0",
+    "pybullet>=3.2.6",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.0.0",
+]
+
+[tool.setuptools]
+include-package-data = true
+packages = ["edith", "edith.core", "edith.wrapper", "edith.server"]
+package-dir = { 
+    "edith" = ".",
+    "edith.core" = "core",
+    "edith.wrapper" = "wrapper",
+    "edith.server" = "server"
+}
