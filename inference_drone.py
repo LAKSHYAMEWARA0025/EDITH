@@ -286,8 +286,16 @@ def run_episode(client: OpenAI, task: str, server_url: str, debug: bool = False)
             if crashed:
                 print(f"[CRASH] Drone crashed - episode terminated")
             
-            rewards.append(reward)
-            total_reward += reward
+            # Accumulate rewards (but final episode reward replaces per-step sum)
+            if not done:
+                rewards.append(reward)
+                total_reward += reward
+            else:
+                # Episode ended: reward is the FINAL normalized score [-1, 1]
+                # It already includes per-step rewards, so don't accumulate
+                rewards.append(reward)
+                total_reward = reward  # Replace, don't add
+            
             steps_taken = step
             
             log_step(step, action["tool"], tool_result, reward, done, action.get("args", {}))
