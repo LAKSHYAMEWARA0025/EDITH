@@ -59,7 +59,7 @@ COORDINATE SYSTEM:
 - Z: negative=down, positive=up
 
 DECISION FRAMEWORK — follow this priority each step:
-1. No information yet → call scan_area to find targets and obstacles
+1. No information yet → call get_mission_status to get target coordinates
 2. Know where target is → call move_drone_to with coordinates toward target
 3. Near obstacle → call get_obstacle_distances then reroute
 4. Think you are close → call get_drone_status to verify position
@@ -67,6 +67,12 @@ DECISION FRAMEWORK — follow this priority each step:
    Then call get_drone_status ONCE to check position
    If distance to [0, 0, 0.1] is less than 0.5m — you are home, STOP
    Do not call get_drone_status repeatedly while returning
+
+TARGET INFORMATION:
+- Target coordinates are provided in mission_status["targets"]
+- Each target has: {"id": 0, "position": [x, y, z], "reached": false}
+- Navigate directly to target position using move_drone_to
+- Use scan_area only for obstacle detection, not target finding
 
 MOVEMENT RULES:
 - Move in steps of 2-4 meters at a time, not 10+ meters
@@ -140,7 +146,12 @@ def log_step(step: int, tool: str, result: Dict[Any, Any], reward: float, done: 
     
     # Show mission status
     if tool == "get_mission_status" and not error:
-        print(f"          └─ Targets: {result.get('targets_reached', 0)}/{result.get('total_targets', 0)} | Complete: {result.get('mission_complete', False)}")
+        targets_info = ""
+        if 'targets' in result and result['targets']:
+            target = result['targets'][0]  # Show first target
+            pos = target['position']
+            targets_info = f" | Target: [{pos[0]:.1f}, {pos[1]:.1f}, {pos[2]:.1f}]"
+        print(f"          └─ Targets: {result.get('targets_reached', 0)}/{result.get('total_targets', 0)} | Complete: {result.get('mission_complete', False)}{targets_info}")
     
     if error:
         print(f"          Error: {error}")
@@ -227,6 +238,13 @@ def run_episode(client: OpenAI, task: str, server_url: str, debug: bool = False)
         print(f"       Mission: {state['mission_status']['total_targets']} targets")
         print(f"       Time limit: {state['mission_status']['time_remaining']:.1f}s")
         print(f"       Drone position: {state['drones']['0']['position']}")
+        
+        # Show target positions
+        if 'targets' in state['mission_status'] and state['mission_status']['targets']:
+            for target in state['mission_status']['targets']:
+                pos = target['position']
+                print(f"       Target {target['id']}: [{pos[0]:.1f}, {pos[1]:.1f}, {pos[2]:.1f}]")
+        
         print(f"[DEBUG] Mission complete at reset: {state['mission_status']['mission_complete']}\n")
         
         # Initialize conversation

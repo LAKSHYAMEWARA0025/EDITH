@@ -296,10 +296,22 @@ def get_mission_status(env):
         if is_wrapper:
             total_targets = len(env.scene_manager.target_ids)
             targets_reached = env.episode_tracker.targets_reached
+            
+            # Add target positions (operator provides coordinates in mission brief)
+            targets = []
+            for i, target_body_id in enumerate(env.scene_manager.target_ids):
+                target_pos, _ = p.getBasePositionAndOrientation(
+                    target_body_id, physicsClientId=inner_env.CLIENT)
+                targets.append({
+                    "id": i,
+                    "position": list(target_pos),
+                    "reached": False
+                })
         else:
             # Called directly on inner env (test mode)
             total_targets = 0
             targets_reached = 0
+            targets = []
         
         # Get drone information
         num_drones = getattr(inner_env, 'NUM_DRONES', 1)
@@ -347,6 +359,7 @@ def get_mission_status(env):
             "time_elapsed": float(time_elapsed),
             "total_targets": int(total_targets),
             "targets_reached": int(targets_reached),
+            "targets": targets,  # Target positions provided by operator
             "drones": drones,
             "mission_complete": mission_complete
         }
