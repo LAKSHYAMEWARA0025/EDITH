@@ -74,6 +74,22 @@ TARGET INFORMATION:
 - Navigate directly to target position using move_drone_to
 - Use scan_area only for obstacle detection, not target finding
 
+TOOL SIGNATURES (use exact parameter names):
+1. get_mission_status: NO ARGUMENTS
+   Example: {"tool": "get_mission_status", "args": {}}
+
+2. move_drone_to: drone_id, x, y, z (separate coordinates, NOT "position")
+   Example: {"tool": "move_drone_to", "args": {"drone_id": 0, "x": 5.0, "y": 0.0, "z": 1.0}}
+
+3. get_drone_status: drone_id
+   Example: {"tool": "get_drone_status", "args": {"drone_id": 0}}
+
+4. scan_area: drone_id
+   Example: {"tool": "scan_area", "args": {"drone_id": 0}}
+
+5. return_drone_home: drone_id
+   Example: {"tool": "return_drone_home", "args": {"drone_id": 0}}
+
 MOVEMENT RULES:
 - Move in steps of 2-4 meters at a time, not 10+ meters
 - Keep Z between 0.8 and 1.5 for normal flight
