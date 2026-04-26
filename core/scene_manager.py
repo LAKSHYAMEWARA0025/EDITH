@@ -9,8 +9,9 @@ class SceneManager:
     RGBA_GREEN = [0.0, 1.0, 0.0, 1.0]
     
     # Object sizes
-    OBSTACLE_SIZE = 0.3  # 0.3m cubes
-    TARGET_SIZE = 0.2    # 0.2m cubes
+    OBSTACLE_WIDTH = 0.4   # 0.4m width (X/Y)
+    OBSTACLE_HEIGHT = 1.2  # 1.2m height (Z) - tall enough to block flight paths
+    TARGET_SIZE = 0.2      # 0.2m cubes
     
     def __init__(self, client_id):
         self.client_id = client_id
@@ -18,18 +19,19 @@ class SceneManager:
         self.target_ids = []
 
     def create_colored_obstacle(self, position, size=None):
-        """Create red obstacle cube at specified position."""
-        if size is None:
-            size = self.OBSTACLE_SIZE
+        """Create red obstacle cube at specified position with tall vertical extent."""
+        width = self.OBSTACLE_WIDTH
+        height = self.OBSTACLE_HEIGHT
         
+        # Create tall rectangular obstacle (wider in Z to block vertical space)
         col_id = p.createCollisionShape(
             p.GEOM_BOX, 
-            halfExtents=[size, size, size], 
+            halfExtents=[width, width, height/2],  # Half-extents: X, Y, Z
             physicsClientId=self.client_id
         )
         vis_id = p.createVisualShape(
             p.GEOM_BOX, 
-            halfExtents=[size, size, size], 
+            halfExtents=[width, width, height/2], 
             rgbaColor=self.RGBA_RED, 
             physicsClientId=self.client_id
         )
@@ -107,7 +109,8 @@ class SceneManager:
         perp_dir = np.array([-path_dir[1], path_dir[0], 0.0])
         
         # ── 3. Place obstacles strategically ─────────────────────────
-        # Divide path into segments, place one obstacle per segment
+        # Randomized blocking: each obstacle gets random lateral offset
+        # Creates variable difficulty: sometimes blocked, sometimes open
         segment_ranges = [
             (0.25, 0.40),
             (0.45, 0.60),
@@ -130,16 +133,24 @@ class SceneManager:
             t = np.random.uniform(seg_min, seg_max)
             base_pos = spawn + path_dir * path_length * t
             
-            # Minimal lateral offset — places obstacle ON centerline to force detours
-            # Small random offset prevents perfect stacking
+            # RANDOMIZED lateral offset - varies per obstacle
+            # 40% chance: fully blocked (0.0-0.3m)
+            # 40% chance: partially blocked (0.5-1.2m)
+            # 20% chance: open path (1.5-2.5m)
+            rand_val = np.random.random()
+            if rand_val < 0.4:
+                lateral_magnitude = np.random.uniform(0.0, 0.3)  # Centerline block
+            elif rand_val < 0.8:
+                lateral_magnitude = np.random.uniform(0.5, 1.2)  # Partial block
+            else:
+                lateral_magnitude = np.random.uniform(1.5, 2.5)  # Open path
+            
             lateral_sign = 1 if i % 2 == 0 else -1
-            lateral_magnitude = np.random.uniform(0.0, 0.3)  # Nearly on centerline
             lateral_offset = perp_dir * lateral_sign * lateral_magnitude
             
-            # Vertical variation — forces altitude changes sometimes
-            vertical_offset = np.array([0, 0, np.random.uniform(-0.3, 0.5)])
-            
-            obstacle_pos = base_pos + lateral_offset + vertical_offset
+            # Fixed Z position at flight altitude to force lateral navigation
+            obstacle_pos = base_pos + lateral_offset
+            obstacle_pos[2] = 1.0  # Center at typical flight altitude
             
             # ── 4. Safety checks ─────────────────────────────────────
             # Don't place too close to spawn
@@ -163,10 +174,9 @@ class SceneManager:
                 attempts += 1
                 continue
             
-            # Clamp to arena bounds
+            # Clamp to arena bounds (no Z clamping - fixed at 1.0)
             obstacle_pos[0] = np.clip(obstacle_pos[0], -7.5, 7.5)
             obstacle_pos[1] = np.clip(obstacle_pos[1], -7.5, 7.5)
-            obstacle_pos[2] = np.clip(obstacle_pos[2], 0.5, 2.0)
             
             self.create_colored_obstacle(obstacle_pos.tolist())
             placed_positions.append(obstacle_pos.tolist())
@@ -177,7 +187,7 @@ class SceneManager:
         if len(placed_positions) >= 2 and np.random.random() > 0.4:
             flank_side = np.random.choice([-1, 1])
             flank_pos = target_pos + perp_dir * flank_side * np.random.uniform(0.5, 1.0)  # Closer to target
-            flank_pos[2] = np.clip(flank_pos[2], 0.5, 2.0)
+            flank_pos[2] = 1.0  # Fixed at flight altitude
             
             # Only place if not too close to target and other obstacles
             valid_flank = True
@@ -221,7 +231,7 @@ class SceneManager:
         path_dir = path_vec / path_length
         perp_dir = np.array([-path_dir[1], path_dir[0], 0.0])
         
-        # ── 3. Place obstacles with tighter spacing ──────────────────
+        # ── 3. Place obstacles with randomized blocking ──────────────────
         segment_ranges = [
             (0.20, 0.35),
             (0.40, 0.55),
@@ -242,14 +252,23 @@ class SceneManager:
             t = np.random.uniform(seg_min, seg_max)
             base_pos = spawn + path_dir * path_length * t
             
-            # Minimal lateral offset for Task 2 - obstacles ON centerline
-            # Forces significant detours = higher battery cost
+            # RANDOMIZED lateral offset for Task 2
+            # 50% chance: fully blocked (0.0-0.2m) - higher battery cost
+            # 30% chance: partially blocked (0.4-1.0m)
+            # 20% chance: open path (1.2-2.0m)
+            rand_val = np.random.random()
+            if rand_val < 0.5:
+                lateral_magnitude = np.random.uniform(0.0, 0.2)  # Tight block
+            elif rand_val < 0.8:
+                lateral_magnitude = np.random.uniform(0.4, 1.0)  # Partial block
+            else:
+                lateral_magnitude = np.random.uniform(1.2, 2.0)  # Open path
+            
             lateral_sign = 1 if i % 2 == 0 else -1
-            lateral_magnitude = np.random.uniform(0.0, 0.2)  # Nearly on centerline
             lateral_offset = perp_dir * lateral_sign * lateral_magnitude
             
-            vertical_offset = np.array([0, 0, np.random.uniform(-0.2, 0.4)])
-            obstacle_pos = base_pos + lateral_offset + vertical_offset
+            obstacle_pos = base_pos + lateral_offset
+            obstacle_pos[2] = 1.0  # Fixed at flight altitude
             
             # Safety checks
             if np.linalg.norm(obstacle_pos - spawn) < 1.0:
@@ -269,10 +288,9 @@ class SceneManager:
                 attempts += 1
                 continue
             
-            # Clamp to bounds
+            # Clamp to bounds (no Z clamping)
             obstacle_pos[0] = np.clip(obstacle_pos[0], -7.5, 7.5)
             obstacle_pos[1] = np.clip(obstacle_pos[1], -7.5, 7.5)
-            obstacle_pos[2] = np.clip(obstacle_pos[2], 0.5, 2.0)
             
             self.create_colored_obstacle(obstacle_pos.tolist())
             placed_positions.append(obstacle_pos.tolist())
@@ -282,7 +300,7 @@ class SceneManager:
         if len(placed_positions) >= 2:
             mid_pos = spawn + path_dir * path_length * 0.5
             mid_pos += perp_dir * np.random.choice([-1, 1]) * np.random.uniform(0.5, 1.0)
-            mid_pos[2] = np.clip(mid_pos[2], 0.5, 2.0)
+            mid_pos[2] = 1.0  # Fixed at flight altitude
             
             valid_mid = True
             for prev_pos in placed_positions:
@@ -348,13 +366,23 @@ class SceneManager:
                     t = np.random.uniform(0.3, 0.7)
                     base_pos = spawn + path_dir * path_length * t
                     
-                    # Minimal lateral offset - obstacle ON centerline
+                    # RANDOMIZED lateral offset for Task 3
+                    # 35% chance: fully blocked (0.0-0.3m)
+                    # 40% chance: partially blocked (0.5-1.2m)
+                    # 25% chance: open path (1.5-2.5m)
+                    rand_val = np.random.random()
+                    if rand_val < 0.35:
+                        lateral_magnitude = np.random.uniform(0.0, 0.3)
+                    elif rand_val < 0.75:
+                        lateral_magnitude = np.random.uniform(0.5, 1.2)
+                    else:
+                        lateral_magnitude = np.random.uniform(1.5, 2.5)
+                    
                     lateral_sign = 1 if i % 2 == 0 else -1
-                    lateral_magnitude = np.random.uniform(0.0, 0.3)
                     lateral_offset = perp_dir * lateral_sign * lateral_magnitude
                     
-                    vertical_offset = np.array([0, 0, np.random.uniform(-0.2, 0.4)])
-                    obstacle_pos = base_pos + lateral_offset + vertical_offset
+                    obstacle_pos = base_pos + lateral_offset
+                    obstacle_pos[2] = 1.0  # Fixed at flight altitude
                     
                     # Safety checks
                     if np.linalg.norm(obstacle_pos - spawn) < 1.0:
@@ -381,10 +409,9 @@ class SceneManager:
                         attempts += 1
                         continue
                     
-                    # Clamp to bounds
+                    # Clamp to bounds (no Z clamping)
                     obstacle_pos[0] = np.clip(obstacle_pos[0], -7.5, 7.5)
                     obstacle_pos[1] = np.clip(obstacle_pos[1], -7.5, 7.5)
-                    obstacle_pos[2] = np.clip(obstacle_pos[2], 0.5, 2.0)
                     
                     self.create_colored_obstacle(obstacle_pos.tolist())
                     placed_positions.append(obstacle_pos.tolist())
