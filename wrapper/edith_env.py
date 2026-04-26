@@ -124,146 +124,204 @@ class EDITHDroneEnv:
     def step(self, action):
         """Execute one step with comprehensive error handling."""
         try:
-            # Validate action structure
+            # --- Validate action ---
             if not isinstance(action, dict):
                 return self.state(), -0.1, False, False, {
                     "tool_result": {"error": f"Invalid action type: expected dict, got {type(action).__name__}"},
                     "reward_breakdown": {}
                 }
-            
-            # Record action
-            self.episode_tracker.record_action(action)
-            
-            # Extract tool name and args
+
             tool_name = action.get("name", action.get("tool"))
             if not tool_name:
                 return self.state(), -0.1, False, False, {
-                    "tool_result": {"error": "Missing tool name in action (expected 'name' or 'tool' key)"},
+                    "tool_result": {"error": "Missing tool name in action"},
                     "reward_breakdown": {}
                 }
-            
+
             args = action.get("arguments", action.get("args", {}))
             if args is None:
                 args = {}
-            
-            # Execute tool
+
+            # --- Detect deviations before executing ---
+            deviations = []
+
+            # Repeated tool call detection
+            if self.episode_tracker.check_repeated_call(tool_name, args):
+                deviations.append("repeated_tool_call")
+
+            # Battery critical ignored
+            if tool_name not in ("return_drone_home", "get_drone_status"):
+                for i in range(self.num_drones):
+                    if self.battery_simulator.get_battery(i) < 10.0:
+                        deviations.append("battery_critical_ignored")
+                        break
+
+            # --- Record action ---
+            self.episode_tracker.record_action(action)
+
+            # --- Execute tool ---
             result = self._execute_tool(tool_name, args)
-            
-            # If move_drone_to was called successfully, update target position
+
+            # --- Update target position if move command ---
             if tool_name == "move_drone_to" and "error" not in result:
                 drone_id = args.get("drone_id", 0)
                 if "target_position" in result:
                     new_target = np.array(result["target_position"])
                     self.target_positions[drone_id] = new_target
                     print(f"[DEBUG] Updated target for drone {drone_id}: {new_target}")
-            
-            # If return_drone_home was called, also update target position
+
             if tool_name == "return_drone_home" and "error" not in result:
                 drone_id = args.get("drone_id", 0)
                 if "home_position" in result:
                     new_target = np.array(result["home_position"])
                     self.target_positions[drone_id] = new_target
                     print(f"[DEBUG] Returning drone {drone_id} to home: {new_target}")
-            
-            # Execute multiple physics steps to allow drone to move towards target
-            # This gives PID controller time to actually move the drone
-            # Physics: 240Hz, Control: 48Hz (every 5 physics steps), LLM: ~1Hz
-            # So we need ~240 physics steps per LLM decision for realistic movement
-            physics_steps = 240  # ~1 second of movement at 240Hz physics
-            
+
+            # --- Run physics steps ---
+            physics_steps = 240
             for _ in range(physics_steps):
-                # Build action array for PID controller: shape (num_drones, 3)
                 pid_action = np.zeros((self.num_drones, 3))
                 for i in range(self.num_drones):
-                    target = self.target_positions[i]
-                    pid_action[i] = target  # [x, y, z]
-                
-                # Debug: print on first iteration
+                    pid_action[i] = self.target_positions[i]
                 if _ == 0:
                     print(f"[DEBUG] PID action for step: {pid_action}")
-                
-                # Step the environment (this moves drones towards targets)
-                obs, _, _, _, _ = self.env.step(pid_action)
-                
-                # Check for collisions during movement
+                self.env.step(pid_action)
+
+                # Collision check during flight
                 for i in range(self.num_drones):
                     drone_pos = self.env._getDroneStateVector(i)[0:3]
-                    # Simple collision check: if drone is very low, it crashed
                     if drone_pos[2] < 0.05:
                         self.episode_tracker.record_collision(i)
-            
-            # Update progress tracking for each drone (after physics steps)
+                        if "collision" not in deviations:
+                            deviations.append("collision")
+
+            # --- Compute current distance to nearest target ---
+            current_distance = float('inf')
             for i in range(self.num_drones):
                 drone_pos = self.env._getDroneStateVector(i)[0:3]
-                # Find closest target
-                if self.scene_manager.target_ids:
-                    closest_target_pos = None
-                    min_dist = float('inf')
-                    for target_body_id in self.scene_manager.target_ids:
-                        target_pos, _ = p.getBasePositionAndOrientation(target_body_id, 
-                                                                        physicsClientId=self.env.CLIENT)
-                        dist = np.linalg.norm(drone_pos - np.array(target_pos))
-                        if dist < min_dist:
-                            min_dist = dist
-                            closest_target_pos = target_pos
-                    
-                    if closest_target_pos is not None:
-                        self.episode_tracker.update_position(i, drone_pos.tolist(), closest_target_pos)
-            
-            # Check for target reached
+                for target_body_id in self.scene_manager.target_ids:
+                    target_pos, _ = p.getBasePositionAndOrientation(
+                        target_body_id, physicsClientId=self.env.CLIENT)
+                    dist = np.linalg.norm(drone_pos - np.array(target_pos))
+                    if dist < current_distance:
+                        current_distance = dist
+
+            # --- Out of bounds check ---
+            for i in range(self.num_drones):
+                pos = self.env._getDroneStateVector(i)[0:3]
+                if abs(pos[0]) > 8.0 or abs(pos[1]) > 8.0 or pos[2] > 3.0:
+                    deviations.append("out_of_bounds")
+
+            # --- Moving away check ---
+            prev_dist = self.episode_tracker.prev_distance_to_target
+            if prev_dist is not None and current_distance > prev_dist + 2.0:
+                deviations.append("moving_away")
+
+            # --- Set initial distance ---
+            if self.episode_tracker.initial_distance_to_target is None and current_distance < float('inf'):
+                self.episode_tracker.initial_distance_to_target = current_distance
+
+            # --- Detect milestones ---
+            milestones = []
+            initial_dist = self.episode_tracker.initial_distance_to_target
+
+            if tool_name == "scan_area" and "error" not in result:
+                if result.get("total_found", 0) > 0:
+                    milestones.append("first_scan_completed")
+
+            if tool_name == "assign_drone_to_target" and "error" not in result:
+                milestones.append("target_located")
+
+            if initial_dist and current_distance < initial_dist * 0.5:
+                milestones.append("halfway_there")
+
+            if current_distance < 1.5:
+                milestones.append("close_approach")
+
+            # --- Check targets reached ---
             for i in range(self.num_drones):
                 drone_pos = self.env._getDroneStateVector(i)[0:3]
-                for target_idx, target_body_id in enumerate(self.scene_manager.target_ids):
-                    target_pos, _ = p.getBasePositionAndOrientation(target_body_id, 
-                                                                    physicsClientId=self.env.CLIENT)
+                for target_idx, target_body_id in enumerate(list(self.scene_manager.target_ids)):
+                    target_pos, _ = p.getBasePositionAndOrientation(
+                        target_body_id, physicsClientId=self.env.CLIENT)
                     distance = np.linalg.norm(drone_pos - np.array(target_pos))
-                    if distance < 0.5:  # Within 0.5m = reached
+                    if distance < 0.5:
                         self.episode_tracker.record_target_reached(target_idx)
-                        # Remove target so it's not counted twice
+                        milestones.append("target_reached")
                         p.removeBody(target_body_id, physicsClientId=self.env.CLIENT)
-                        self.scene_manager.target_ids.pop(target_idx)
+                        self.scene_manager.target_ids.remove(target_body_id)
                         break
-            
-            # Finalize episode data
-            final_battery = {i: self.battery_simulator.get_battery(i) 
+
+            if tool_name == "return_drone_home" and "error" not in result:
+                if result.get("status") == "command_sent":
+                    milestones.append("return_initiated")
+                elif result.get("status") == "arrived_home":
+                    milestones.append("arrived_home")
+
+            # --- Update position tracking ---
+            self.episode_tracker.prev_distance_to_target = current_distance
+            for i in range(self.num_drones):
+                drone_pos = self.env._getDroneStateVector(i)[0:3].tolist()
+                target_pos_list = [0, 0, 0]
+                if self.scene_manager.target_ids:
+                    tp, _ = p.getBasePositionAndOrientation(
+                        self.scene_manager.target_ids[0], physicsClientId=self.env.CLIENT)
+                    target_pos_list = list(tp)
+                self.episode_tracker.update_position(i, drone_pos, target_pos_list)
+
+            # --- Battery update ---
+            for i in range(self.num_drones):
+                vel = self.env._getDroneStateVector(i)[10:13]
+                self.battery_simulator.step({i: vel})
+
+            # --- Finalize episode data ---
+            final_battery = {i: self.battery_simulator.get_battery(i)
                              for i in range(self.num_drones)}
-            all_crashed = all(final_battery[i] <= 0 for i in range(self.num_drones))
+            all_crashed = all(v <= 0 for v in final_battery.values())
             self.episode_tracker.finalize(final_battery, all_crashed)
-            
-            # Compute per-step reward
-            reward_dict = self.reward_calculator.compute_reward(self.episode_tracker)
-            reward = reward_dict["total"]
-            
-            # Check termination conditions
+
+            # --- Compute per-step reward ---
+            step_reward = self.reward_calculator.compute_step_reward(
+                episode_data=self.episode_tracker,
+                current_distance=current_distance,
+                prev_distance=prev_dist,
+                new_milestones=milestones,
+                new_deviations=deviations
+            )
+            self.episode_tracker.record_step_reward(step_reward)
+
+            # --- Check termination ---
             time_left = self.episode_tracker.get_time_remaining()
             targets_left = self.episode_tracker.total_targets - self.episode_tracker.targets_reached
-            batteries_dead = all_crashed
-            step_limit = self.episode_tracker.step_count >= 100  # Allow more steps since agent needs to scan + move
-            
-            # Episode ends if:
-            # 1. All targets reached (success)
-            # 2. Time limit exceeded (timeout)
-            # 3. All drones crashed (failure)
-            # 4. Step limit reached (prevent infinite loops)
-            done = bool(targets_left <= 0 or time_left <= 0 or batteries_dead or step_limit)
-            
-            # Add termination bonus/penalty
+            step_limit = self.episode_tracker.step_count >= 100
+
+            done = bool(
+                targets_left <= 0 or
+                time_left <= 0 or
+                all_crashed or
+                step_limit
+            )
+
+            # --- Episode-end reward on termination ---
+            reward = step_reward
+            reward_breakdown = {"step_reward": float(step_reward)}
+
             if done:
-                if targets_left <= 0:
-                    reward += 5.0  # Big bonus for completing mission
-                elif time_left <= 0 or step_limit:
-                    reward -= 1.0  # Penalty for timeout/step limit
-                elif batteries_dead:
-                    reward -= 2.0  # Bigger penalty for crash
-            
-            # Ensure done is Python bool, not numpy.bool_
-            return self.state(), float(reward), bool(done), False, {
-                "tool_result": result,
-                "reward_breakdown": reward_dict
+                episode_reward_dict = self.reward_calculator.compute_episode_reward(
+                    self.episode_tracker)
+                reward = episode_reward_dict["total"]
+                reward_breakdown = episode_reward_dict
+
+            return self._sanitize(self.state()), float(reward), bool(done), False, {
+                "tool_result": self._sanitize(result),
+                "reward_breakdown": reward_breakdown,
+                "milestones_hit": list(milestones),
+                "deviations": list(deviations)
             }
-            
+
         except Exception as e:
-            # Catch any unexpected errors in step execution
+            import traceback
+            traceback.print_exc()
             return self.state(), -0.5, False, False, {
                 "tool_result": {"error": f"Step execution failed: {str(e)}"},
                 "reward_breakdown": {}
@@ -278,3 +336,20 @@ class EDITHDroneEnv:
             }
         except Exception as e:
             return {"error": f"Failed to get state: {str(e)}"}
+
+    def _sanitize(self, obj):
+        """Recursively convert all numpy types to Python native types."""
+        import numpy as np
+        if isinstance(obj, dict):
+            return {k: self._sanitize(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self._sanitize(v) for v in obj]
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        elif isinstance(obj, (np.bool_,)):
+            return bool(obj)
+        elif isinstance(obj, (np.integer,)):
+            return int(obj)
+        elif isinstance(obj, (np.floating,)):
+            return float(obj)
+        return obj

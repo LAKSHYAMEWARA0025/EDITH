@@ -433,7 +433,7 @@ def return_drone_home(env, drone_id):
     
     Returns:
         dict: {
-            "status": "returning" or "error",
+            "status": "command_sent" or "arrived_home" or "error",
             "home_position": [x, y, z],
             "current_position": [x, y, z],
             "distance_to_home": float (meters),
@@ -458,13 +458,25 @@ def return_drone_home(env, drone_id):
         # Estimate time (assume 1 m/s average speed)
         estimated_time = distance / 1.0
         
+        # NEW: check if already home
+        if distance < 0.5:
+            return {
+                "status": "arrived_home",
+                "home_position": home_pos.tolist(),
+                "current_position": current_pos.tolist(),
+                "distance_to_home": float(distance),
+                "drone_id": int(drone_id),
+                "note": "Drone has arrived home. Mission complete."
+            }
+        
         return {
-            "status": "returning",
+            "status": "command_sent",          # changed from "returning"
             "home_position": home_pos.tolist(),
             "current_position": current_pos.tolist(),
             "distance_to_home": float(distance),
             "estimated_time": float(estimated_time),
-            "drone_id": int(drone_id)
+            "drone_id": int(drone_id),
+            "note": "Return command sent ONCE. Now call get_drone_status to monitor position. Do NOT call return_drone_home again."
         }
         
     except Exception as e:

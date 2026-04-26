@@ -30,6 +30,15 @@ class EpisodeData:
         self.repeated_actions = {}  # Detect action loops
         self.closest_distance_to_target = float('inf')  # Best distance achieved
         
+        # NEW fields for milestone-based reward system
+        self.milestones_hit = set()              # prevents duplicate milestone rewards
+        self.per_step_rewards = []               # accumulates per-step signals for normalization
+        self.prev_distance_to_target = None      # for delta computation each step
+        self.initial_distance_to_target = None   # for halfway milestone trigger
+        self.last_tool_call = None               # for repeated call detection
+        self.last_tool_args = None               # for repeated call detection
+        self.deviation_penalties_accumulated = 0.0  # running total for logging
+        
     def record_action(self, action):
         """Log tool call and detect loops."""
         self.step_count += 1
@@ -148,3 +157,18 @@ class EpisodeData:
     def log_milestone(self, milestone_name):
         """Backward compatibility."""
         self.record_milestone(milestone_name)
+    
+    def record_step_reward(self, reward):
+        """Accumulate per-step reward for episode-end normalization."""
+        self.per_step_rewards.append(float(reward))
+    
+    def check_repeated_call(self, tool_name, args):
+        """Returns True if this is identical to last tool call."""
+        args_str = str(args)
+        is_repeated = (
+            self.last_tool_call == tool_name and
+            self.last_tool_args == args_str
+        )
+        self.last_tool_call = tool_name
+        self.last_tool_args = args_str
+        return is_repeated

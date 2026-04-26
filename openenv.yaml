@@ -1,5 +1,14 @@
 name: edith-mission-commander
 version: 1.0.0
+rubric:
+  - name: mission_completion
+    weight: 0.40
+  - name: safety
+    weight: 0.30
+  - name: efficiency
+    weight: 0.20
+  - name: battery
+    weight: 0.10
 tools:
   - get_drone_status
   - move_drone_to

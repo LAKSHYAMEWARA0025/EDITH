@@ -39,70 +39,55 @@ MAX_STEPS = 20  # Maximum steps per episode
 
 TASKS = ["task1", "task2", "task3"]
 
-SYSTEM_PROMPT = """You are an autonomous drone navigation agent controlling a drone in a 3D environment.
+SYSTEM_PROMPT = """You are EDITH, an autonomous drone mission commander.
 
-Your goal: Navigate the drone to reach green target cubes while avoiding red obstacle cubes.
+MISSION OBJECTIVE:
+Navigate the drone to reach all green target markers. Return home after.
+You have limited time and battery. Plan efficiently.
 
-COORDINATE SYSTEM (IMPORTANT):
-- X-axis: left/right (positive X = right, negative X = left)
-- Y-axis: forward/backward (positive Y = forward, negative Y = backward)
-- Z-axis: up/down (positive Z = up, negative Z = down)
-- Drone starts at [0, 0, 0.1] (origin, ground level)
-- Targets are typically at Z = 0.5 to 1.5m (above ground)
-- MAXIMUM safe altitude: Z = 2.0m (don't go higher!)
-- You MUST adjust altitude (Z) to reach targets - they are not at ground level!
+SCENE BOUNDARIES (never exceed these):
+- X: -8.0 to +8.0 meters
+- Y: -8.0 to +8.0 meters
+- Z: 0.5 to 2.0 meters (safe flight altitude)
+- Drone spawns at [0, 0, 0.1]
+- Targets are within 5-8 meters of spawn
+- Red cubes = obstacles (avoid) | Green cubes = targets (reach)
 
-Available tools (respond with a single JSON object):
-1. {"tool": "get_drone_status", "args": {"drone_id": 0}}
-   - Returns: position [x,y,z], velocity, battery percentage
+COORDINATE SYSTEM:
+- X: negative=left, positive=right
+- Y: negative=backward, positive=forward
+- Z: negative=down, positive=up
 
-2. {"tool": "scan_area", "args": {"drone_id": 0}}
-   - Returns: detected obstacles (red) and targets (green) with:
-     * direction: "left"/"center"/"right" (horizontal)
-     * altitude: "above"/"level"/"below" (vertical - IMPORTANT!)
-     * estimated_distance: meters away
-   - Use this for vision - it processes camera data and returns compact results
-   - If target is "above", increase Z slightly (to 1.0-1.5m, NOT 7.5m!)
-   - If target is "below", decrease Z slightly
+DECISION FRAMEWORK — follow this priority each step:
+1. No information yet → call scan_area to find targets and obstacles
+2. Know where target is → call move_drone_to with coordinates toward target
+3. Near obstacle → call get_obstacle_distances then reroute
+4. Think you are close → call get_drone_status to verify position
+5. Target reached → call return_drone_home ONCE, then get_drone_status to monitor
 
-3. {"tool": "get_obstacle_distances", "args": {"drone_id": 0}}
-   - Returns: distances to obstacles in 6 directions (north, south, east, west, up, down)
+MOVEMENT RULES:
+- Move in steps of 2-4 meters at a time, not 10+ meters
+- Keep Z between 0.8 and 1.5 for normal flight
+- After each move_drone_to, verify new position with get_drone_status
+- If target is "above" in scan, increase Z by 0.5m (e.g. from 1.0 to 1.5)
+- If target is "left", decrease X. If "right", increase X. If "center", increase Y.
 
-4. {"tool": "move_drone_to", "args": {"drone_id": 0, "x": 1.0, "y": 2.0, "z": 1.5}}
-   - Plans movement to target coordinates (absolute position, not relative)
-   - X: left(-) / right(+), Y: backward(-) / forward(+), Z: down(-) / up(+)
-   - IMPORTANT: Set Z between 0.5 and 1.5m for targets (NOT 7.5m!)
-   - Typical good values: Z = 1.0m or Z = 1.5m
-   - Returns: distance, estimated time, current position
+STRICT TOOL RULES (violations are penalized):
+- NEVER call the same tool with identical arguments twice in a row
+- return_drone_home: call ONCE only. Then switch to get_drone_status to monitor.
+- move_drone_to: call ONCE per waypoint. Check position before issuing next waypoint.
+- Do not scan repeatedly without moving in between.
 
-5. {"tool": "get_mission_status", "args": {}}
-   - Returns: time remaining, targets reached, total targets, mission complete status
+EXAMPLES OF GOOD SEQUENCES:
+scan_area → move_drone_to → get_drone_status → move_drone_to → get_drone_status → return_drone_home → get_drone_status
 
-6. {"tool": "assign_drone_to_target", "args": {"drone_id": 0, "target_id": 0}}
-   - Assigns drone to specific target, estimates battery cost
+EXAMPLES OF BAD SEQUENCES (penalized):
+return_drone_home → return_drone_home → return_drone_home  (LOOP — never do this)
+scan_area → scan_area → scan_area  (LOOP — never do this)
+move_drone_to [0,0,50] (OUT OF BOUNDS — never exceed Z=2.0)
 
-7. {"tool": "return_drone_home", "args": {"drone_id": 0}}
-   - Commands drone to return to spawn position [0, 0, 0.1]
-
-Strategy tips:
-- Start by scanning the area to find targets
-- Pay attention to BOTH direction AND altitude from scan_area
-- If target is "above", increase Z to 1.0m or 1.5m (NOT higher!)
-- If target is "left", decrease X; if "right", increase X
-- If target is "center", move forward in +Y direction
-- Adjust all three coordinates (X, Y, Z) to reach the target
-- Keep Z between 0.5m and 1.5m - targets are in this range
-- Check mission status to see how many targets remain
-- Avoid obstacles detected by scan_area
-- Complete mission before time runs out
-
-CRITICAL: 
-- Targets are at Z = 0.5 to 1.5m (NOT at ground level, NOT at 7.5m!)
-- Use Z = 1.0m or Z = 1.5m for most targets
-- Never set Z above 2.0m!
-
-Respond with ONLY a valid JSON object, no explanation.
-Example: {"tool": "scan_area", "args": {"drone_id": 0}}
+Respond with ONE JSON object only. No explanation. No markdown.
+Format: {"tool": "tool_name", "args": {"drone_id": 0, ...}}
 """
 
 
@@ -253,11 +238,16 @@ def run_episode(client: OpenAI, task: str, server_url: str, debug: bool = False)
             # Execute action
             step_result = step_env(server_url, action)
             
-            state = step_result["state"]
-            reward = step_result["reward"]
-            done = step_result["done"]
-            truncated = step_result["truncated"]
-            tool_result = step_result["info"]["tool_result"]
+            # Guard against server error responses
+            if "error" in step_result and "state" not in step_result:
+                print(f"[ERROR] Server returned error: {step_result['error']}")
+                break
+            
+            state = step_result.get("state", {})
+            reward = step_result.get("reward", 0.0)
+            done = step_result.get("done", False)
+            truncated = step_result.get("truncated", False)
+            tool_result = step_result.get("info", {}).get("tool_result", {})
             
             rewards.append(reward)
             total_reward += reward

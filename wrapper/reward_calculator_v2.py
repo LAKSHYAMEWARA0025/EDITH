@@ -1,162 +1,175 @@
 """
-Redesigned Reward Calculator with Proper Normalization
+EDITH Reward Calculator — Milestone-Based Hybrid Design
 
-Key principles:
-1. All rewards in range [-1, +1] per step
-2. Episode rewards comparable across different episode lengths
-3. Clear signal for what's good/bad
-4. No extreme values that dominate learning
+Two components:
+1. Per-step: continuous distance progress signal + milestone bonuses + deviation penalties
+2. Episode-end: comprehensive judgment across mission, safety, efficiency, battery
+
+Final score normalized to [-1.0, 1.0]
 """
+
+import numpy as np
+
 
 class RewardCalculatorV2:
     def __init__(self):
-        # Reward component weights (sum to 1.0)
-        self.PROGRESS_WEIGHT = 0.6      # Most important
-        self.SAFETY_WEIGHT = 0.2        # Collisions bad
-        self.EFFICIENCY_WEIGHT = 0.2    # Time/battery management
-        
-        # Normalization constants
-        self.MAX_EXPECTED_DISTANCE = 20.0  # Realistic max distance in scene
-        self.COLLISION_PENALTY = -0.5      # Per collision
-        self.TARGET_BONUS = 1.0            # Per target reached
-        
-    def compute_reward(self, episode_data):
-        """
-        Compute normalized per-step reward.
-        
-        Returns reward in range approximately [-1, +1] per step.
-        """
-        
-        # Hard override for crashes
-        if episode_data.all_drones_crashed:
-            return {
-                "total": -1.0,
-                "progress": 0.0,
-                "safety": -1.0,
-                "efficiency": 0.0
-            }
-        
-        # Compute weighted components
-        progress = self._progress_reward(episode_data) * self.PROGRESS_WEIGHT
-        safety = self._safety_reward(episode_data) * self.SAFETY_WEIGHT
-        efficiency = self._efficiency_reward(episode_data) * self.EFFICIENCY_WEIGHT
-        
-        # Total is weighted sum (range: [-1, +1])
-        total = progress + safety + efficiency
-        
-        # Clip to ensure bounds
-        total = max(-1.0, min(1.0, total))
-        
-        return {
-            "total": float(total),
-            "progress": float(progress),
-            "safety": float(safety),
-            "efficiency": float(efficiency)
+        # Scene normalization constant
+        self.MAX_SCENE_DISTANCE = 15.0
+
+        # Per-step signal caps
+        self.MAX_STEP_SIGNAL = 0.10
+        self.MIN_STEP_SIGNAL = -0.10
+
+        # Milestone bonuses (one-time per episode)
+        self.MILESTONE_BONUSES = {
+            "first_scan_completed":   0.05,
+            "target_located":         0.05,
+            "halfway_there":          0.10,
+            "close_approach":         0.15,
+            "target_reached":         0.20,
+            "return_initiated":       0.05,
+            "arrived_home":           0.10,
         }
-    
-    def _progress_reward(self, episode_data):
+
+        # Deviation penalties (per occurrence)
+        self.DEVIATION_PENALTIES = {
+            "collision":              0.20,
+            "out_of_bounds":          0.15,
+            "repeated_tool_call":     0.05,
+            "battery_critical_ignored": 0.10,
+            "moving_away":            0.05,
+        }
+
+        # Episode-end weights (sum to 1.0)
+        self.MISSION_WEIGHT    = 0.40
+        self.SAFETY_WEIGHT     = 0.30
+        self.EFFICIENCY_WEIGHT = 0.20
+        self.BATTERY_WEIGHT    = 0.10
+
+    # ------------------------------------------------------------------
+    # PER-STEP REWARD
+    # ------------------------------------------------------------------
+
+    def compute_step_reward(self, episode_data, current_distance, prev_distance,
+                            new_milestones=None, new_deviations=None):
         """
-        Progress towards target.
-        Returns value in range [-1, +1].
+        Called every step. Returns per-step scalar reward.
+
+        Args:
+            episode_data: EpisodeData instance
+            current_distance: float, distance to nearest target this step
+            prev_distance: float, distance to nearest target last step
+            new_milestones: list of milestone keys hit this step
+            new_deviations: list of deviation keys triggered this step
+
+        Returns:
+            float: per-step reward signal
         """
-        # Target reached: maximum reward
-        if episode_data.targets_reached > 0:
-            return 1.0
-        
-        # No target info yet
-        if episode_data.closest_distance_to_target == float('inf'):
-            return 0.0
-        
-        # Distance-based reward
-        # Closer = higher reward
-        distance = episode_data.closest_distance_to_target
-        normalized_distance = min(1.0, distance / self.MAX_EXPECTED_DISTANCE)
-        
-        # Map distance to reward:
-        # 0m → +1.0
-        # 10m → +0.5
-        # 20m+ → 0.0
-        progress_score = 1.0 - normalized_distance
-        
-        # Check if making progress (getting closer)
-        if episode_data.is_making_progress():
-            # Bonus for moving in right direction
-            return progress_score
-        else:
-            # Penalty for moving away or stagnating
-            # But not too harsh - exploration is okay
-            return progress_score * 0.5 - 0.2
-    
-    def _safety_reward(self, episode_data):
-        """
-        Safety score based on collisions.
-        Returns value in range [-1, +1].
-        """
-        if episode_data.collisions == 0:
-            return 1.0  # Perfect safety
-        elif episode_data.collisions == 1:
-            return 0.0  # One collision, neutral
-        else:
-            return -1.0  # Multiple collisions, bad
-    
-    def _efficiency_reward(self, episode_data):
-        """
-        Efficiency score based on movement and time.
-        Returns value in range [-1, +1].
-        """
-        # Penalize excessive stagnation
-        if episode_data.stagnant_steps > 20:
-            return -1.0  # Completely stuck
-        elif episode_data.stagnant_steps > 10:
-            return -0.5  # Mostly stuck
-        elif episode_data.stagnant_steps > 5:
-            return 0.0   # Some stagnation
-        else:
-            return 0.5   # Moving well
-    
+        reward = 0.0
+
+        # 1. Continuous distance progress signal
+        if prev_distance is not None and prev_distance < float('inf'):
+            delta = prev_distance - current_distance  # positive = getting closer
+            signal = np.clip(delta / self.MAX_SCENE_DISTANCE, -0.10, 0.10)
+            reward += float(signal)
+
+        # 2. Milestone bonuses (one-time)
+        if new_milestones:
+            for milestone in new_milestones:
+                if milestone in self.MILESTONE_BONUSES:
+                    if milestone not in episode_data.milestones_hit:
+                        reward += self.MILESTONE_BONUSES[milestone]
+                        episode_data.milestones_hit.add(milestone)
+
+        # 3. Deviation penalties
+        if new_deviations:
+            for deviation in new_deviations:
+                if deviation in self.DEVIATION_PENALTIES:
+                    reward -= self.DEVIATION_PENALTIES[deviation]
+
+        return float(reward)
+
+    # ------------------------------------------------------------------
+    # EPISODE-END REWARD
+    # ------------------------------------------------------------------
+
     def compute_episode_reward(self, episode_data):
         """
-        Compute final episode reward (for logging/comparison).
-        
-        This is separate from per-step rewards and used for:
-        - Comparing episodes of different lengths
-        - Final evaluation metrics
-        
-        Returns normalized score in range [0, 100].
+        Called once at episode termination.
+
+        Returns:
+            dict: rubric-compliant reward dictionary with keys matching openenv.yaml
         """
-        score = 0.0
-        
-        # Target completion (0-50 points)
+
+        # Hard override — all drones crashed
+        if episode_data.all_drones_crashed:
+            return {
+                "total":              0.0,
+                "mission_completion": 0.0,
+                "safety":             0.0,
+                "efficiency":         0.0,
+                "battery":            0.0,
+                "per_step_total":     float(np.clip(
+                    sum(episode_data.per_step_rewards), -0.5, 0.5
+                )),
+            }
+
+        # --- Mission Completion [0.0, 1.0] ---
         if episode_data.total_targets > 0:
-            completion_rate = episode_data.targets_reached / episode_data.total_targets
-            score += completion_rate * 50.0
-        
-        # Safety (0-25 points)
+            mission_score = episode_data.targets_reached / episode_data.total_targets
+        else:
+            mission_score = 0.0
+
+        # --- Safety [0.0, 1.0] ---
         if episode_data.collisions == 0:
-            score += 25.0
+            safety_score = 1.0
         elif episode_data.collisions == 1:
-            score += 15.0
+            safety_score = 0.6
         elif episode_data.collisions == 2:
-            score += 5.0
-        # else: 0 points
-        
-        # Efficiency (0-25 points)
-        if episode_data.total_targets > 0 and episode_data.targets_reached > 0:
-            # Time efficiency
-            time_ratio = episode_data.get_time_elapsed() / episode_data.time_limit
-            if time_ratio < 0.5:
-                score += 15.0  # Very fast
-            elif time_ratio < 0.75:
-                score += 10.0  # Fast
-            elif time_ratio < 1.0:
-                score += 5.0   # On time
-            # else: 0 points (timeout)
-            
-            # Step efficiency
-            if episode_data.step_count < 20:
-                score += 10.0  # Very efficient
-            elif episode_data.step_count < 50:
-                score += 5.0   # Efficient
-            # else: 0 points
-        
-        return float(score)
+            safety_score = 0.2
+        else:
+            safety_score = 0.0
+
+        # --- Efficiency [0.0, 1.0] ---
+        time_elapsed = episode_data.get_time_elapsed()
+        time_limit   = episode_data.time_limit
+        if time_elapsed > 0 and time_limit > 0:
+            efficiency_score = float(np.clip(time_limit / time_elapsed, 0.0, 1.0))
+        else:
+            efficiency_score = 0.0
+
+        # --- Battery [0.0, 1.0] ---
+        if episode_data.final_battery:
+            avg_battery = np.mean(list(episode_data.final_battery.values()))
+            battery_score = float(np.clip(avg_battery / 100.0, 0.0, 1.0))
+        else:
+            battery_score = 0.0
+
+        # --- Weighted episode-end score [0.0, 1.0] ---
+        episode_end = (
+            self.MISSION_WEIGHT    * mission_score    +
+            self.SAFETY_WEIGHT     * safety_score     +
+            self.EFFICIENCY_WEIGHT * efficiency_score +
+            self.BATTERY_WEIGHT    * battery_score
+        )
+
+        # --- Per-step total normalized to [-0.5, +0.5] ---
+        per_step_total = float(np.clip(
+            sum(episode_data.per_step_rewards), -0.5, 0.5
+        ))
+
+        # --- Final total [-1.0, +1.0] ---
+        # episode_end scaled to [0.0, 0.5], per_step_total in [-0.5, +0.5]
+        total = float(np.clip(
+            (episode_end * 0.5) + per_step_total,
+            -1.0, 1.0
+        ))
+
+        return {
+            "total":              total,
+            "mission_completion": float(round(mission_score, 4)),
+            "safety":             float(round(safety_score, 4)),
+            "efficiency":         float(round(efficiency_score, 4)),
+            "battery":            float(round(battery_score, 4)),
+            "per_step_total":     float(round(per_step_total, 4)),
+        }

@@ -58,12 +58,12 @@ def reset():
     """Reset the environment."""
     try:
         if env is None:
-            return {"error": "Environment not initialized"}
+            return {"error": "Environment not initialized", "state": {}, "info": {}}
         
         state, info = env.reset()
         return {"state": state, "info": info}
     except Exception as e:
-        return {"error": f"Reset failed: {str(e)}"}
+        return {"error": f"Reset failed: {str(e)}", "state": {}, "info": {}}
 
 @app.post("/step")
 def step(action: StepAction):
