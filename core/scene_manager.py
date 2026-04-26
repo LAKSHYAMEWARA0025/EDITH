@@ -130,10 +130,10 @@ class SceneManager:
             t = np.random.uniform(seg_min, seg_max)
             base_pos = spawn + path_dir * path_length * t
             
-            # Random lateral offset — blocks path but leaves navigable gap
-            # Alternate sides to create slalom pattern
+            # Minimal lateral offset — places obstacle ON centerline to force detours
+            # Small random offset prevents perfect stacking
             lateral_sign = 1 if i % 2 == 0 else -1
-            lateral_magnitude = np.random.uniform(0.3, 1.2)
+            lateral_magnitude = np.random.uniform(0.0, 0.3)  # Nearly on centerline
             lateral_offset = perp_dir * lateral_sign * lateral_magnitude
             
             # Vertical variation — forces altitude changes sometimes
@@ -173,10 +173,10 @@ class SceneManager:
             attempts = 0  # Reset attempts counter on successful placement
         
         # ── 5. Optional: Add one flanking obstacle near target ───────
-        # Forces final approach planning, not just straight run at end
+        # Forces final approach planning with lateral maneuver
         if len(placed_positions) >= 2 and np.random.random() > 0.4:
             flank_side = np.random.choice([-1, 1])
-            flank_pos = target_pos + perp_dir * flank_side * np.random.uniform(0.8, 1.5)
+            flank_pos = target_pos + perp_dir * flank_side * np.random.uniform(0.5, 1.0)  # Closer to target
             flank_pos[2] = np.clip(flank_pos[2], 0.5, 2.0)
             
             # Only place if not too close to target and other obstacles
@@ -242,9 +242,10 @@ class SceneManager:
             t = np.random.uniform(seg_min, seg_max)
             base_pos = spawn + path_dir * path_length * t
             
-            # Tighter lateral range for Task 2 (forces longer detours = more battery cost)
+            # Minimal lateral offset for Task 2 - obstacles ON centerline
+            # Forces significant detours = higher battery cost
             lateral_sign = 1 if i % 2 == 0 else -1
-            lateral_magnitude = np.random.uniform(0.2, 0.8)  # Tighter than Task 1
+            lateral_magnitude = np.random.uniform(0.0, 0.2)  # Nearly on centerline
             lateral_offset = perp_dir * lateral_sign * lateral_magnitude
             
             vertical_offset = np.array([0, 0, np.random.uniform(-0.2, 0.4)])
@@ -347,9 +348,9 @@ class SceneManager:
                     t = np.random.uniform(0.3, 0.7)
                     base_pos = spawn + path_dir * path_length * t
                     
-                    # Lateral offset
+                    # Minimal lateral offset - obstacle ON centerline
                     lateral_sign = 1 if i % 2 == 0 else -1
-                    lateral_magnitude = np.random.uniform(0.4, 1.0)
+                    lateral_magnitude = np.random.uniform(0.0, 0.3)
                     lateral_offset = perp_dir * lateral_sign * lateral_magnitude
                     
                     vertical_offset = np.array([0, 0, np.random.uniform(-0.2, 0.4)])
