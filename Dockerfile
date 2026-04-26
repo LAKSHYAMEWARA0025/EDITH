@@ -44,12 +44,12 @@ ENV DISPLAY=
 ENV MESA_GL_VERSION_OVERRIDE=3.3
 ENV MESA_GLSL_VERSION_OVERRIDE=330
 
-# Expose FastAPI port
-EXPOSE 8000
+# Expose FastAPI port (HuggingFace Spaces uses 7860)
+EXPOSE 7860
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:8000/tools || exit 1
+    CMD curl -f http://localhost:7860/tools || exit 1
 
-# Run FastAPI server
-CMD ["uvicorn", "server.app:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run FastAPI server on port 7860
+CMD ["uvicorn", "server.app:app", "--host", "0.0.0.0", "--port", "7860"]
